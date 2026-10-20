@@ -3,7 +3,7 @@ import { CURRENT_WEEK, fiscalOfWeek, formatDay, LAST_COMPLETE_WEEK, weekEndDay, 
 import { periodWeeksOf } from '../data/generate';
 import { DEPTS } from '../data/products';
 import { DISTRICTS, REGIONS, STORES } from '../data/stores';
-import { Banner, KeyFigures, SectionHeading, type Tile } from '../components/Blocks';
+import { Banner, BannerStack, KeyFigures, SectionHeading, type Tile } from '../components/Blocks';
 import { HierTable, type HierCol, type HierRow } from '../components/HierTable';
 import { InfoTip, Var } from '../components/ui';
 import { C, ChartCard, ChartGrid, hbarHeight, HBars, TrendLines } from '../components/Charts';
@@ -142,28 +142,35 @@ export function FreshReportView({ openDefinitions }: ViewProps) {
     return { total, regionNodes, districtNodes, storeNodes };
   }, [data, allWeeks, colWeeks, rangeWeeks, lyWeeks]);
 
-  // Store outliers: a department more than 5 pts below budget in each of the last 4 complete weeks of the range.
+  // Store outliers: a department more than 5 pts below budget over the last 4 complete weeks, accumulated (weekly GP % swings with purchase timing).
   const outliers = useMemo(() => {
     const last4 = [range.endWeek - 3, range.endWeek - 2, range.endWeek - 1, range.endWeek].filter((w) => w >= 0);
     const out: { store: number; dept: number; gap: number; dsd: number }[] = [];
     for (const d of depts) {
       const rows = freshStoreWeeks(scope, [d], last4);
+      let chainSales = 0;
+      let chainDsd = 0;
+      for (const row of rows.values())
+        for (const c of row) {
+          chainSales += c.sales;
+          chainDsd += c.purchases.dsd;
+        }
+      const dsdNorm = chainSales > 0 ? chainDsd / chainSales : 0;
       for (const [s, row] of rows) {
-        let ok = row.length === 4;
+        const ok = row.length === 4;
         let sales = 0;
         let purch = 0;
         let budget = 0;
         let dsd = 0;
         for (const c of row) {
-          const gp = freshGpPct(c.sales, purchOf(c));
-          const b = safeDiv(c.budget, c.sales);
-          if (gp === null || b === null || gp - b > -0.05) ok = false;
           sales += c.sales;
           purch += purchOf(c);
           budget += c.budget;
           dsd += c.purchases.dsd;
         }
-        if (ok) out.push({ store: s, dept: d, gap: (freshGpPct(sales, purch)! - budget / sales) * 100, dsd: dsd / sales });
+        const gap = sales > 0 ? (freshGpPct(sales, purch)! - budget / sales) * 100 : 0;
+        // Only gaps a purchasing channel explains (DSD well above the department norm), not timing noise.
+        if (ok && gap < -5 && dsd / sales > dsdNorm * 1.5) out.push({ store: s, dept: d, gap, dsd: dsd / sales });
       }
     }
     return out.sort((a, b) => a.gap - b.gap);
@@ -342,9 +349,7 @@ export function FreshReportView({ openDefinitions }: ViewProps) {
         ).
       </SectionHeading>
 
-      <Banner lead="Known gap:" details={{ label: 'Details', onClick: () => openDefinitions('total-purchases') }}>
-        purchases shipped through CNS, DN and Milton are not in the source systems.
-      </Banner>
+      <BannerStack>
       {outliers.slice(0, 3).map((o) => {
         const st = STORES[o.store];
         return (
@@ -359,11 +364,15 @@ export function FreshReportView({ openDefinitions }: ViewProps) {
               },
             }}
           >
-            store {st.code} ({st.district}) {DEPTS[o.dept].name} GP % has been <b>{Math.abs(o.gap).toFixed(1)} pts below budget</b> for 4 consecutive weeks,
-            with DSD purchases at <b>{pct(o.dsd)}</b> of sales.
+            store {st.code} ({st.district}) {DEPTS[o.dept].name} GP % is <b>{Math.abs(o.gap).toFixed(1)} pts below budget</b> over the last 4 weeks
+            combined, with DSD purchases at <b>{pct(o.dsd)}</b> of sales.
           </Banner>
         );
       })}
+      <Banner lead="Known gap:" details={{ label: 'Details', onClick: () => openDefinitions('total-purchases') }}>
+        purchases shipped through CNS, DN and Milton are not in the source systems.
+      </Banner>
+      </BannerStack>
 
       <ViewToggles />
 

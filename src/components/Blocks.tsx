@@ -1,5 +1,5 @@
 import { AlertTriangle, Info } from 'lucide-react';
-import { useState, type ReactNode } from 'react';
+import { Children, useState, type ReactNode } from 'react';
 import { AS_OF_DAY, fiscalOfDay, formatDay } from '../data/calendar';
 import { TABS, type TabId } from '../lib/filters';
 import { InfoTip } from './ui';
@@ -68,6 +68,30 @@ export function Banner({
         )}
         {open && details?.content && <div className="banner-extra">{details.content}</div>}
       </div>
+    </div>
+  );
+}
+
+/**
+ * One notice at a time, as in UC1: the first (most important) banner shows, the rest fold into
+ * a "+N more notices" line that expands in place.
+ */
+export function BannerStack({ children }: { children: ReactNode }) {
+  const [open, setOpen] = useState(false);
+  const items = Children.toArray(children);
+  if (items.length === 0) return null;
+  const rest = items.slice(1);
+  return (
+    <div className="banner-stack">
+      {items[0]}
+      {rest.length > 0 && (
+        <>
+          {open && rest}
+          <button type="button" className="banner-more" aria-expanded={open} onClick={() => setOpen((o) => !o)}>
+            {open ? 'Hide other notices' : `+${rest.length} more notice${rest.length > 1 ? 's' : ''}`}
+          </button>
+        </>
+      )}
     </div>
   );
 }

@@ -4,7 +4,7 @@ import { CATS, DEPTS, ITEMS } from '../data/products';
 import { STORES } from '../data/stores';
 import { RETAIL_LOSS_FACTOR } from '../data/generate';
 import { PLANTED } from '../data/planted';
-import { Banner, KeyFigures, SectionHeading, Sparkline, type Tile } from '../components/Blocks';
+import { Banner, BannerStack, KeyFigures, SectionHeading, Sparkline, type Tile } from '../components/Blocks';
 import { HierTable, type HierCol, type HierRow } from '../components/HierTable';
 import { CellBar, Field, StatusChip } from '../components/ui';
 import { C, ChartCard, ChartGrid, hbarHeight, ColumnsVsLy, HBars } from '../components/Charts';
@@ -87,6 +87,18 @@ const COLUMNS: HierCol[] = [
   { key: 'spark', label: '26-week trend', sortable: false, title: 'Weekly known loss, last 26 weeks of the range' },
   { key: 'flag', label: 'Flag' },
 ];
+
+/** Entry errors are told apart from real high loss by the units test (> 20× typical); overstock is real loss after a holiday. */
+function flagLabel(f: FlagHit): string {
+  if (f.entryError) return 'Likely entry error';
+  if (f.kind === 'overstock') return 'Post-holiday overstock';
+  return 'Real high loss';
+}
+
+function flagChip(f: FlagHit) {
+  const label = flagLabel(f);
+  return <span className={`chip ${f.entryError ? 'error' : f.kind === 'overstock' ? 'amber' : 'neutral'}`}>{label}</span>;
+}
 
 function ruleText(f: FlagHit, dollars: number): string {
   const ratio = Number.isFinite(f.ratio) ? `${f.ratio >= 100 ? f.ratio.toFixed(0) : f.ratio.toFixed(1)}×` : 'Far above';
@@ -269,7 +281,7 @@ export function ShrinkReviewView({ openDefinitions }: ViewProps) {
   const flagSheet = () => ({
     title: 'Flagged items',
     subtitle: `${describeProductScope(state)} · ${describeStoreScope(state)} · ${weeklyRange} · rule: loss > ${money(state.rule.dollars)} and > ${Math.round(state.rule.pct * 100)} % above the 26-week average`,
-    head: ['Rank', 'Item', 'Code', 'Store', 'District', 'Week', 'Week beginning', 'Known loss $ (cost)', 'Loss units', 'UoM', 'Typical weekly units', '26-week average $', 'Times average', 'Likely entry error', 'Above plausibility cap'],
+    head: ['Rank', 'Item', 'Code', 'Store', 'District', 'Week', 'Week beginning', 'Known loss $ (cost)', 'Loss units', 'UoM', 'Typical weekly units', '26-week average $', 'Times average', 'Assessment', 'Above plausibility cap'],
     rows: flags.map((f, n) => {
       const it = ITEMS[f.item];
       const st = STORES[f.store];
@@ -287,7 +299,7 @@ export function ShrinkReviewView({ openDefinitions }: ViewProps) {
         Math.round(f.avgUnits * 10) / 10,
         Math.round(f.avgCost * 100) / 100,
         Number.isFinite(f.ratio) ? Math.round(f.ratio * 10) / 10 : null,
-        f.entryError ? 'Yes' : 'No',
+        flagLabel(f),
         f.extreme ? 'Yes' : 'No',
       ];
     }),
@@ -341,6 +353,13 @@ export function ShrinkReviewView({ openDefinitions }: ViewProps) {
         .
       </SectionHeading>
 
+      <BannerStack>
+      {extreme && (
+        <Banner lead={state.flagged === 'excl' ? 'Extreme entry excluded:' : 'Extreme entry included:'} kind={state.flagged === 'excl' ? 'alert' : 'danger'}>
+          {extreme.item}, store {extreme.store}, {extreme.week}: <b>{moneyCompact(extreme.cost)}</b> of known loss.{' '}
+          {state.flagged === 'excl' ? 'It is flagged and left out of every total by default.' : 'Totals now include it, which distorts department loss.'}
+        </Banner>
+      )}
       {incomplete.length > 0 && (
         <Banner
           lead="Incomplete reporting:"
@@ -349,12 +368,7 @@ export function ShrinkReviewView({ openDefinitions }: ViewProps) {
           {incomplete.length} store{incomplete.length > 1 ? 's have' : ' has'} not posted known loss for {weekLabel(PLANTED.incomplete.week).split(' ')[1]}.
         </Banner>
       )}
-      {extreme && (
-        <Banner lead={state.flagged === 'excl' ? 'Extreme entry excluded:' : 'Extreme entry included:'} kind={state.flagged === 'excl' ? 'alert' : 'danger'}>
-          {extreme.item}, store {extreme.store}, {extreme.week}: <b>{moneyCompact(extreme.cost)}</b> of known loss.{' '}
-          {state.flagged === 'excl' ? 'It is flagged and left out of every total by default.' : 'Totals now include it, which distorts department loss.'}
-        </Banner>
-      )}
+      </BannerStack>
 
       <ViewToggles loss flagged />
 
@@ -453,7 +467,7 @@ export function ShrinkReviewView({ openDefinitions }: ViewProps) {
                         <span>
                           {volume(f.units, it.uom)} vs {volume(f.avgUnits, it.uom)} typical
                         </span>
-                        {f.entryError && <span className="chip error">Likely entry error</span>}
+                        {flagChip(f)}
                       </div>
                       <div className="flag-rule">{ruleText(f, state.rule.dollars)}</div>
                     </li>

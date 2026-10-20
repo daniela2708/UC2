@@ -11,6 +11,9 @@ import {
   EXTREME_ENTRY_DOLLARS,
   getModel,
   NC,
+  NDP,
+  PURCHASE_LEAD,
+  purchaseTiming,
   ND,
   NI,
   NS,
@@ -99,8 +102,9 @@ function shareSet(scope: Scope): ShareSet {
     const sales = new Float32Array(NC * NW);
     const loss = new Float32Array(NC * NW);
     for (let c = 0; c < NC; c++) {
+      const dept = CATS[c].dept;
       for (const s of scope.stores) {
-        const lf = STORES[s].lossFactor;
+        const lf = STORES[s].lossFactor * m.storeDeptLoss[s * NDP + dept];
         const base = (c * NS + s) * NW;
         for (let w = 0; w < NW; w++) {
           const v = m.share[base + w];
@@ -126,7 +130,8 @@ function storeShare(m: Model, c: number, s: number, w: number): [number, number]
   if (v === 0) return [0, 0];
   const t = m.shareTot[c * NW + w];
   const lt = m.lossTot[c * NW + w];
-  return [t > 0 ? v / t : 0, lt > 0 && m.lossPosted[s * NW + w] ? (v * STORES[s].lossFactor) / lt : 0];
+  const lf = STORES[s].lossFactor * m.storeDeptLoss[s * NDP + CATS[c].dept];
+  return [t > 0 ? v / t : 0, lt > 0 && m.lossPosted[s * NW + w] ? (v * lf) / lt : 0];
 }
 
 // ---------------------------------------------------------------- Loss flags
@@ -142,6 +147,8 @@ export interface FlagHit {
   ratio: number;
   entryError: boolean;
   extreme: boolean;
+  /** What the entry is when known: a keyed error, post-holiday overstock or an operational loss. */
+  kind: 'entry' | 'overstock' | 'operational' | 'planted' | 'baseline';
 }
 
 const flagCache = new Map<string, FlagHit[]>();
@@ -182,6 +189,7 @@ export function findFlags(scope: Scope, w0 = scope.range.startWeek, w1 = scope.r
         ratio: h.cost > 0 ? c.cost / h.cost : Infinity,
         entryError: likelyEntryError(c.units, h.units),
         extreme: c.cost > EXTREME_ENTRY_DOLLARS,
+        kind: c.event?.kind ?? 'baseline',
       });
     };
     for (const e of m.events) {
@@ -439,13 +447,18 @@ export function freshStoreWeeks(scope: Scope, depts: number[], weeks: number[]):
         if (w >= 0 && w <= LAST_COMPLETE_WEEK) {
           for (const d of depts) {
             let ds = 0;
+            let next = 0;
+            // Next week's sales drive this week's buying; the in-progress week is not known yet, so it repeats this week.
+            const wn = w + 1 <= LAST_COMPLETE_WEEK ? w + 1 : w;
             for (const c of DEPTS[d].cats) {
-              const [f] = storeShare(m, c, s, w);
-              ds += cs[c * NW + w] * f;
+              ds += cs[c * NW + w] * storeShare(m, c, s, w)[0];
+              next += cs[c * NW + wn] * storeShare(m, c, s, wn)[0];
             }
             if (ds <= 0) continue;
             purchaseFractions(d, s, w, fr);
-            for (const ch of PURCHASE_CHANNELS) cell.purchases[ch] += ds * fr[ch];
+            // Pre-holiday stocking is capped at 1.8× this week's sales (backroom and cooler space).
+            const timed = ((1 - PURCHASE_LEAD) * ds + PURCHASE_LEAD * Math.min(next, ds * 1.8)) * purchaseTiming(d, s, w);
+            for (const ch of PURCHASE_CHANNELS) cell.purchases[ch] += (ch === 'scanCredit' || ch === 'wcCredit' ? ds : timed) * fr[ch];
             cell.sales += ds;
             cell.budget += ds * budgetGp(d, s, w);
           }

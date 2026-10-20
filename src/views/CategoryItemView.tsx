@@ -1,6 +1,6 @@
 import { useMemo, type ReactNode } from 'react';
 import { CATS, DEPTS, ITEMS, SUBS } from '../data/products';
-import { Banner, KeyFigures, SectionHeading, type Tile } from '../components/Blocks';
+import { Banner, BannerStack, KeyFigures, SectionHeading, type Tile } from '../components/Blocks';
 import { HierTable, type HierCol, type HierRow } from '../components/HierTable';
 import { CellBar, InfoTip, StatusChip, Var } from '../components/ui';
 import { C, ChartCard, ChartGrid, ItemMap, TrendLines, Waterfall, type ItemPoint } from '../components/Charts';
@@ -320,26 +320,28 @@ export function CategoryItemView({ openDefinitions }: ViewProps) {
         , Known Loss <b>{moneyCompact(loss)}</b> (<b>{pct(lossPct)}</b> of sales).
       </SectionHeading>
 
-      {staleCount > 0 && (
-        <Banner lead="Stale costs:" details={{ label: 'Open PLU Cost Watch', onClick: () => update(actions.tab('plu')) }}>
-          {staleCount} Deli and Bakery composite PLUs in scope have recipe costs older than 6 months, so their margins are likely overstated.
-        </Banner>
-      )}
-      {seafoodInScope && (
-        <Banner lead="Cost pressure:" details={{ label: 'Show Seafood since P8', onClick: () => goToShrimp(update) }}>
-          Shrimp cost is up <b>{pct(shrimp.costChange)}</b> since {shrimp.fromLabel} with retail flat ({pctChange(shrimp.retailChange)}); Seafood GM % is <b>{pct(shrimp.gmNow)}</b> vs <b>{pct(shrimp.gmLy)}</b> for the same weeks last year.
-        </Banner>
-      )}
-      {extreme && (
-        <Banner
-          lead={extreme.flagged && state.flagged === 'excl' ? 'Excluded from totals:' : 'Included in totals:'}
-          kind={extreme.flagged && state.flagged === 'excl' ? 'alert' : 'danger'}
-          details={{ label: 'Review in Shrink Review', onClick: () => goToExtreme(update) }}
-        >
-          a {moneyCompact(extreme.cost)} known loss entry ({extreme.item}, store {extreme.store}, {extreme.week}) is flagged as an entry error
-          {state.flagged === 'excl' ? ' and left out of loss totals pending review.' : '. Switch to Excl. flagged to remove it from totals.'}
-        </Banner>
-      )}
+      <BannerStack>
+        {extreme && (
+          <Banner
+            lead={extreme.flagged && state.flagged === 'excl' ? 'Excluded from totals:' : 'Included in totals:'}
+            kind={extreme.flagged && state.flagged === 'excl' ? 'alert' : 'danger'}
+            details={{ label: 'Review in Shrink Review', onClick: () => goToExtreme(update) }}
+          >
+            a {moneyCompact(extreme.cost)} known loss entry ({extreme.item}, store {extreme.store}, {extreme.week}) is flagged as an entry error
+            {state.flagged === 'excl' ? ' and left out of loss totals pending review.' : '. Switch to Excl. flagged to remove it from totals.'}
+          </Banner>
+        )}
+        {staleCount > 0 && (
+          <Banner lead="Stale costs:" details={{ label: 'Open PLU Cost Watch', onClick: () => update(actions.tab('plu')) }}>
+            {staleCount} Deli and Bakery composite PLUs in scope have recipe costs older than 6 months, so their margins are likely overstated.
+          </Banner>
+        )}
+        {seafoodInScope && (
+          <Banner lead="Cost pressure:" details={{ label: 'Show Seafood since P8', onClick: () => goToShrimp(update) }}>
+            Shrimp cost is up <b>{pct(shrimp.costChange)}</b> since {shrimp.fromLabel} with retail flat ({pctChange(shrimp.retailChange)}); Seafood GM % is <b>{pct(shrimp.gmNow)}</b> vs <b>{pct(shrimp.gmLy)}</b> for the same weeks last year.
+          </Banner>
+        )}
+      </BannerStack>
 
       <ViewToggles flagged />
 

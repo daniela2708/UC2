@@ -98,15 +98,37 @@ describe('planted stories', () => {
     expect(pts).toBeGreaterThan(-3.5);
   });
 
-  it('5: store 154 Meat runs 6–10 pts below budget for W39–W42', () => {
+  it('5: store 154 Meat runs about 8 pts below budget over W39–W42 (weekly values swing with purchase timing)', () => {
     const scope = buildScope({ ...DEFAULT_STATE, stores: [154] }, resolveTime(tabDefaultTime('fresh')));
     const weeks = [39, 40, 41, 42].map((w) => globalWeek(2026, w));
     const row = freshStoreWeeks(scope, [dept('Meat')], weeks).get(STORES.find((s) => s.id === 154)!.idx)!;
+    let sales = 0;
+    let purchases = 0;
+    let budget = 0;
     for (const c of row) {
-      const gap = (freshGpPct(c.sales, totalPurchases(c.purchases))! - c.budget / c.sales) * 100;
-      expect(gap).toBeLessThan(-6);
-      expect(gap).toBeGreaterThan(-11);
+      sales += c.sales;
+      purchases += totalPurchases(c.purchases);
+      budget += c.budget;
     }
+    const gap = (freshGpPct(sales, purchases)! - budget / sales) * 100;
+    expect(gap).toBeLessThan(-6);
+    expect(gap).toBeGreaterThan(-11);
+  });
+
+  it('weekly Fresh GP % is volatile but steadies when accumulated', () => {
+    const scope = buildScope(DEFAULT_STATE, resolveTime(BASE_TIME), { deptOnly: true });
+    const weeks = Array.from({ length: 26 }, (_, i) => globalWeek(2026, 14 + i));
+    const rows = freshStoreWeeks(scope, [dept('Meat')], weeks);
+    const gps = weeks.map((_, i) => {
+      let s = 0;
+      let p = 0;
+      for (const r of rows.values()) {
+        s += r[i].sales;
+        p += totalPurchases(r[i].purchases);
+      }
+      return freshGpPct(s, p)!;
+    });
+    expect((Math.max(...gps) - Math.min(...gps)) * 100).toBeGreaterThan(8);
   });
 
   it('6: stores 213, 386 and 290 post no known loss for W42', () => {

@@ -244,6 +244,21 @@ export interface Series {
   width?: number;
 }
 
+/** 8 % of the data range as head- and footroom, so no line touches or leaves the plot. */
+function padOf(_edge: number, data: Record<string, number | string | null>[], series: Series[]): number {
+  let lo = Infinity;
+  let hi = -Infinity;
+  for (const r of data)
+    for (const s of series) {
+      const v = r[s.key];
+      if (typeof v === 'number' && Number.isFinite(v)) {
+        lo = Math.min(lo, v);
+        hi = Math.max(hi, v);
+      }
+    }
+  return Number.isFinite(lo) ? Math.max((hi - lo) * 0.08, Math.abs(hi) * 0.002, 1e-6) : 0;
+}
+
 export function TrendLines({
   width,
   height,
@@ -264,7 +279,12 @@ export function TrendLines({
   return (
     <LineChart width={width} height={height} data={data} margin={{ top: 10, right: 70, bottom: 0, left: 4 }}>
       <XAxis dataKey="x" {...axisProps} interval="preserveStartEnd" minTickGap={24} />
-      <YAxis {...axisProps} width={52} tickFormatter={tickFormat ?? format} domain={['auto', 'auto']} />
+      <YAxis
+        {...axisProps}
+        width={52}
+        tickFormatter={tickFormat ?? format}
+        domain={[(lo: number) => lo - padOf(lo, data, series), (hi: number) => hi + padOf(hi, data, series)]}
+      />
       {reference && <ReferenceLine y={reference.y} stroke={C.axis} strokeWidth={1} label={{ value: reference.label, position: 'insideTopLeft', fill: C.axis, fontSize: 11 }} />}
       <Tooltip
         cursor={{ stroke: C.axis, strokeWidth: 1 }}
@@ -424,11 +444,10 @@ export function HBars({
           dataKey="value"
           content={(props) => {
             const { x, y, width, height, value } = props as { x: number; y: number; width: number; height: number; value: number };
-            const neg = value < 0;
             const arrow = arrows ? (value > 0.05 ? '▲ ' : value < -0.05 ? '▼ ' : '') : '';
             return (
               <text
-                x={neg ? x + width + 6 : x + width + 6}
+                x={Math.max(x, x + width) + 6}
                 y={y + height / 2 + 4}
                 fontSize={11.5}
                 fontWeight={700}

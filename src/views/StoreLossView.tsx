@@ -126,7 +126,7 @@ export function StoreLossView({ openDefinitions }: ViewProps) {
   for (const [s, n] of storeNodes) {
     const dp = districtPct.get(STORES[s].district);
     const sp = lossPctOfSales(n.loss, n.sales);
-    if (dp !== null && dp !== undefined && sp !== null && sp > dp) aboveAvg++;
+    if (dp !== null && dp !== undefined && sp !== null && (sp - dp) * 100 > 1) aboveAvg++;
   }
 
   const storeRow = (s: number): HierRow => {
@@ -257,7 +257,7 @@ export function StoreLossView({ openDefinitions }: ViewProps) {
     { label: 'Known Loss $', info: 'KL1011 known loss for the complete weeks in range.', value: moneyCompact(total.loss), sub: `${basisWord} · ${state.flagged === 'excl' ? 'excl.' : 'incl.'} flagged` },
     { label: 'Loss % of sales', info: 'Known Loss ÷ Gross Sales.', value: pct(lp), sub: `of ${moneyCompact(total.sales)} sales` },
     { label: 'vs LY', info: 'Loss % − Loss % for the same fiscal weeks last year. Lower is better.', value: <Var value={vsLy} invert />, sub: ly ? 'Same fiscal weeks last year' : 'No last-year history' },
-    { label: 'Stores above district avg', info: "Stores whose loss % is above their own district's loss %.", value: `${count(aboveAvg)} / ${count(storeNodes.size)}`, sub: 'Loss % above own district' },
+    { label: 'Stores > 1 pt above district', info: "Stores whose loss % is more than 1 percentage point above their own district's loss %.", value: `${count(aboveAvg)} / ${count(storeNodes.size)}`, sub: 'Loss % more than 1 pt above own district' },
     { label: 'Items flagged', info: 'Distinct items with at least one item-store-week above the flag rule.', value: count(flaggedItems), sub: `${count(flags.length)} item-store-weeks` },
   ];
 
@@ -274,7 +274,7 @@ export function StoreLossView({ openDefinitions }: ViewProps) {
             vs. last year
           </>
         )}
-        ); <b>{count(aboveAvg)}</b> stores are above their district average.
+        ); <b>{count(aboveAvg)}</b> stores run more than 1 pt above their district average.
       </SectionHeading>
 
       {incomplete.length > 0 && (

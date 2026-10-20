@@ -156,6 +156,47 @@ function deptSeasonal(d: number, w: number): number {
   }
 }
 
+/** Loss runs high after holidays (unsold seasonal stock), around Valentine's for Floral and in summer heat for Produce. */
+const LOSS_AFTER: [string, number[]][] = [
+  //                Meat Produce Deli Bakery Seafood Floral
+  ['thanksgiving', [1.5, 1.4, 1.4, 1.9, 1.3, 1.6]],
+  ['christmasEve', [1.35, 1.3, 1.45, 1.6, 1.5, 1.5]],
+  ['newYear', [1.2, 1.15, 1.3, 1.3, 1.3, 1.2]],
+  ['valentinesDay', [1.0, 1.0, 1.0, 1.3, 1.15, 2.4]],
+  ['easter', [1.4, 1.1, 1.2, 1.4, 1.1, 1.8]],
+  ['mothersday', [1.0, 1.0, 1.0, 1.2, 1.0, 1.9]],
+  ['july4', [1.3, 1.3, 1.15, 1.1, 1.0, 1.0]],
+  ['memorial', [1.2, 1.2, 1.1, 1.05, 1.0, 1.2]],
+  ['laborday', [1.2, 1.15, 1.1, 1.05, 1.0, 1.0]],
+  ['halloween', [1.0, 1.05, 1.0, 1.5, 1.0, 1.1]],
+];
+const LOSS_SEASON = (() => {
+  const raw = new Float64Array(NDP * NW);
+  for (let d = 0; d < NDP; d++) {
+    for (let w = 0; w < NW; w++) {
+      let m = 1;
+      for (const [h, mult] of LOSS_AFTER) if (w > 0 && HOLIDAY_SETS[h][w - 1]) m *= mult[d];
+      if (d === 5 && HOLIDAY_SETS.valentinesDay[w]) m *= 1.4;
+      if (d === 1) m *= 1 + 0.35 * bump(w % 52, 29, 8);
+      if (d === 2) m *= 1 + 0.1 * bump(w % 52, 29, 8);
+      if (d === 4) m *= 1 + 0.12 * bump(w % 52, 29, 7);
+      raw[d * NW + w] = m;
+    }
+    let mean = 0;
+    for (let w = 0; w < 52; w++) mean += raw[d * NW + w] / 52;
+    for (let w = 0; w < NW; w++) raw[d * NW + w] /= mean;
+  }
+  return raw;
+})();
+
+/** Weeks right after a holiday, when unsold seasonal stock is written off. */
+export const POST_HOLIDAY_WEEKS: number[] = (() => {
+  const out = new Set<number>();
+  for (const [h] of LOSS_AFTER)
+    for (let w = 1; w < NW; w++) if (HOLIDAY_SETS[h][w - 1] && !HOLIDAY_SETS[h][w]) out.add(w);
+  return [...out].sort((a, b) => a - b);
+})();
+
 function deptHoliday(d: number, w: number): number {
   let m = 1;
   for (const key in DEPT_HOLIDAY) if (HOLIDAY_SETS[key][w]) m *= DEPT_HOLIDAY[key][d];
@@ -170,7 +211,7 @@ export interface LossEvent {
   week: number;
   lossCost: number;
   lossUnits: number;
-  kind: 'entry' | 'operational' | 'planted';
+  kind: 'entry' | 'operational' | 'overstock' | 'planted';
 }
 
 export interface Model {
@@ -202,6 +243,8 @@ export interface Model {
   eventIndex: Map<number, number>;
   /** item × store loss affinity. */
   lossAff: Float32Array;
+  /** store × department loss propensity (handling, staffing, layout differ by store and department). */
+  storeDeptLoss: Float32Array;
 }
 
 export const cellKey = (item: number, store: number, week: number) => (item * NS + store) * NW + week;
@@ -324,7 +367,7 @@ export function buildModel(): Model {
       units[k] = weekSales / price;
 
       if (w <= LAST_COMPLETE_WEEK) {
-        lossCost[k] = Math.max(0, weekSales * lossRate * (1 + 0.12 * hashNormal(i, w, 109)));
+        lossCost[k] = Math.max(0, weekSales * lossRate * LOSS_SEASON[d * NW + w] * (1 + 0.12 * hashNormal(i, w, 109)));
         donations[k] = weekSales * DONATION_RATE[d] * (0.6 + 0.8 * hash01(i, 110));
         salvage[k] = weekSales * SALVAGE_RATE[d] * (0.5 + hash01(i, 111));
         const md = d === 0 ? 0.005 + 0.02 * hash01(d, w, 112) : MARKDOWN_RATE[d] * (0.6 + 0.8 * hash01(d, w, 112));
@@ -358,6 +401,8 @@ export function buildModel(): Model {
     const s = STORE_BY_ID.get(id);
     if (s) lossPosted[s.idx * NW + PLANTED.incomplete.week] = 0;
   }
+  const storeDeptLoss = new Float32Array(NS * NDP);
+  for (const st of STORES) for (let d = 0; d < NDP; d++) storeDeptLoss[st.idx * NDP + d] = Math.exp(0.3 * hashNormal(st.id, d, 205));
   for (let c = 0; c < NC; c++) {
     const d = CATS[c].dept;
     for (const st of STORES) {
@@ -369,7 +414,7 @@ export function buildModel(): Model {
         const v = aff * ramp * (1 + 0.03 * hashNormal(c, s, w));
         share[(c * NS + s) * NW + w] = v;
         shareTot[c * NW + w] += v;
-        lossTot[c * NW + w] += v * st.lossFactor;
+        lossTot[c * NW + w] += v * st.lossFactor * storeDeptLoss[s * NDP + d];
       }
     }
   }
@@ -398,6 +443,7 @@ export function buildModel(): Model {
     events: [],
     eventIndex: new Map(),
     lossAff,
+    storeDeptLoss,
   };
   model.events = buildEvents(model);
   model.events.forEach((e, n) => model.eventIndex.set(cellKey(e.item, e.store, e.week), n));
@@ -413,7 +459,7 @@ export function cellBaseLoss(m: Model, i: number, s: number, w: number): number 
   const sh = m.share[(c * NS + s) * NW + w];
   if (sh <= 0) return 0;
   return (
-    ((m.lossCost[i * NW + w] * sh * STORES[s].lossFactor) / tot) * m.lossAff[i * NS + s] * (1 + 0.45 * hashSigned(i, s, w, 204))
+    ((m.lossCost[i * NW + w] * sh * STORES[s].lossFactor * m.storeDeptLoss[s * NDP + ITEMS[i].dept]) / tot) * m.lossAff[i * NS + s] * (1 + 0.45 * hashSigned(i, s, w, 204))
   );
 }
 
@@ -429,8 +475,7 @@ export function cellLossUpperBound(m: Model, i: number, w0: number, w1: number):
   }
   let maxShare = 0;
   for (let s = 0; s < NS; s++) {
-    const st = STORES[s];
-    const v = st.size * st.lossFactor * 2;
+    const v = m.share[(c * NS + s) * NW + Math.max(0, Math.min(w1, LAST_COMPLETE_WEEK, STORES[s].closeWeek - 1))] * 1.15 * STORES[s].lossFactor * m.storeDeptLoss[s * NDP + ITEMS[i].dept];
     if (v > maxShare) maxShare = v;
   }
   return maxRatio * maxShare * 1.25 * 1.45;
@@ -460,7 +505,7 @@ function buildEvents(m: Model): LossEvent[] {
   // Operational losses (cooler failures, over-ordering) hit high-loss items in larger stores.
   const bigItems = ITEMS.map((it) => it.idx)
     .sort((a, b) => BASE_WEEKLY[ITEMS[b].dept] * ITEMS[b].weight * LOSS_RATE[ITEMS[b].dept] - BASE_WEEKLY[ITEMS[a].dept] * ITEMS[a].weight * LOSS_RATE[ITEMS[a].dept])
-    .slice(0, 40);
+    .slice(0, 60);
   const bigStores = STORES.filter((s) => s.size * s.lossFactor > 1.1).map((s) => s.idx);
   for (let w = 0; w <= LAST_COMPLETE_WEEK; w++) {
     const n = 4 + Math.floor(hash01(w, 301) * 4);
@@ -485,6 +530,31 @@ function buildEvents(m: Model): LossEvent[] {
         lossUnits: lossCostV / m.poCost[i * NW + w],
         kind: entry ? 'entry' : 'operational',
       });
+    }
+  }
+  // Post-holiday overstock: real, large write-offs of seasonal stock the week after a holiday.
+  // Kept between 2.5× and 14× the item-store average, so the rule flags them without calling them entry errors.
+  for (const w of POST_HOLIDAY_WEEKS) {
+    if (w > LAST_COMPLETE_WEEK) continue;
+    let made = 0;
+    for (let tries = 0; tries < 80 && made < 7; tries++) {
+      const i = bigItems[Math.floor(hash01(w, tries, 311) * bigItems.length)];
+      const s = bigStores[Math.floor(hash01(w, tries, 312) * bigStores.length)];
+      const key = cellKey(i, s, w);
+      if (taken.has(key)) continue;
+      let hist = 0;
+      let n = 0;
+      for (let x = Math.max(0, w - 26); x < w; x++) {
+        hist += cellBaseLoss(m, i, s, x);
+        n++;
+      }
+      if (n < 8 || hist <= 0) continue;
+      const avg = hist / n;
+      const want = 1150 + 1500 * hash01(w, tries, 313);
+      if (want / avg < 2.5 || want / avg > 14) continue;
+      taken.add(key);
+      events.push({ item: i, store: s, week: w, lossCost: want, lossUnits: want / m.poCost[i * NW + w], kind: 'overstock' });
+      made++;
     }
   }
   for (const p of [PLANTED.fatFinger, PLANTED.extreme]) {
@@ -526,7 +596,6 @@ const PURCHASE_BASE: Record<string, number[]> = {
   scanCredit: [-0.02, -0.006, -0.008, -0.004, -0.01, -0.002],
 };
 /** Week-to-week swing of in-transit timing (telescopes over a period), by department. */
-const IN_TRANSIT_AMP = [0.012, 0.018, 0.012, 0.01, 0.075, 0.16];
 const BUDGET_GP = [0.292, 0.361, 0.427, 0.513, 0.278, 0.4];
 const SEAFOOD_SQUEEZE_WHSE = 0.026;
 
@@ -534,12 +603,14 @@ const SEAFOOD_SQUEEZE_WHSE = 0.026;
 export function purchaseFractions(d: number, s: number, w: number, out: PurchaseBreakdown): PurchaseBreakdown {
   const st = STORES[s];
   const n = (salt: number) => hashNormal(d, st.id, w, salt);
-  out.whse = PURCHASE_BASE.whse[d] + 0.008 * hashNormal(d, st.id, 401) + 0.006 * n(402);
+  // District execution differs (shrink control, mix, DSD reliance), so some districts beat budget and others miss it.
+  const dist = Number(st.district.slice(1));
+  out.whse = PURCHASE_BASE.whse[d] + 0.011 + 0.014 * hashNormal(dist, 399) + 0.01 * hashNormal(d, dist, 400) + 0.008 * hashNormal(d, st.id, 401) + 0.004 * n(402);
   out.dsd = PURCHASE_BASE.dsd[d] * (1 + 0.15 * n(403));
   out.packaging = PURCHASE_BASE.packaging[d] * (1 + 0.1 * n(404));
   out.reclaim = PURCHASE_BASE.reclaim[d] * (1 + 0.5 * hash01(d, st.id, w, 405));
   out.transfers = 0.004 * n(406);
-  out.inTransit = IN_TRANSIT_AMP[d] * (n(407) - hashNormal(d, st.id, w - 1, 407)) * 0.7;
+  out.inTransit = 0.002 * n(407);
   out.donations = PURCHASE_BASE.donations[d] * (0.7 + 0.6 * hash01(d, st.id, w, 408));
   out.wcCredit = PURCHASE_BASE.wcCredit[d] * (0.5 + hash01(d, st.id, w, 409));
   out.scanCredit = PURCHASE_BASE.scanCredit[d] * (0.8 + 0.4 * hash01(d, st.id, w, 410));
@@ -547,7 +618,7 @@ export function purchaseFractions(d: number, s: number, w: number, out: Purchase
   const o = PLANTED.storeOutlier;
   if (st.id === o.store && DEPTS[d].name === o.dept && w >= o.fromWeek && w <= o.toWeek) {
     out.dsd = o.dsdShare;
-    out.whse += o.whseLift;
+    out.whse = PURCHASE_BASE.whse[d] + 0.011 + o.whseLift;
     out.inTransit = 0;
     out.transfers = 0;
   }
@@ -558,6 +629,23 @@ export function emptyBreakdown(): PurchaseBreakdown {
   const b = {} as PurchaseBreakdown;
   for (const c of PURCHASE_CHANNELS) b[c] = 0;
   return b;
+}
+
+/**
+ * Purchase timing. Stores buy ahead of selling: about 55 % of a week's purchases are for next week's sales,
+ * holidays are stocked the week before, and deliveries land unevenly (a chain-wide warehouse rhythm plus
+ * store-level noise). Both noise terms telescope, so over a period purchases still match sales.
+ */
+const TIMING_CHAIN = [0.07, 0.05, 0.04, 0.035, 0.12, 0.22];
+const TIMING_STORE = [0.12, 0.09, 0.08, 0.07, 0.2, 0.35];
+export const PURCHASE_LEAD = 0.55;
+export function purchaseTiming(d: number, s: number, w: number): number {
+  const id = STORES[s].id;
+  const o = PLANTED.storeOutlier;
+  if (id === o.store && DEPTS[d].name === o.dept && w >= o.fromWeek && w <= o.toWeek) return 1;
+  const chain = hashNormal(d, w, 0, 420) - hashNormal(d, w - 1, 0, 420);
+  const store = hashNormal(d, id, w, 421) - hashNormal(d, id, w - 1, 421);
+  return Math.max(0.2, 1 + 0.7 * (TIMING_CHAIN[d] * chain + TIMING_STORE[d] * store));
 }
 
 /** Budget GP % by department, store and fiscal period. */
