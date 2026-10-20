@@ -126,9 +126,56 @@ export function grossMargin(net: Num, totalCost: Num): number | null {
   return net - totalCost;
 }
 
-/** Gross Margin % = Σ Gross Margin ÷ Σ Net Sales. */
-export function grossMarginPct(sumGrossMargin: Num, sumNetSales: Num): number | null {
-  return safeDiv(sumGrossMargin, sumNetSales);
+/** Ratio of a gross margin total to a sales total (kept for callers that pass the denominator directly). */
+export function grossMarginPct(sumGrossMargin: Num, sumSales: Num): number | null {
+  return safeDiv(sumGrossMargin, sumSales);
+}
+
+/** Which sales total Gross Margin Rate divides by. The workbook uses Gross Sales; Net Sales is a proposed option. */
+export type MarginBase = 'gross' | 'net';
+export const DEFAULT_MARGIN_BASE: MarginBase = 'gross';
+
+/** Gross Margin Rate = Σ Gross Margin ÷ Σ Gross Sales (workbook), or ÷ Σ Net Sales when that option is chosen. */
+export function grossMarginRate(sumGrossMargin: Num, sumGrossSales: Num, sumNetSales: Num, base: MarginBase = DEFAULT_MARGIN_BASE): number | null {
+  return safeDiv(sumGrossMargin, base === 'gross' ? sumGrossSales : sumNetSales);
+}
+
+/** Units-weighted cost per unit: Σ (unit cost × units) ÷ Σ units. Used for PO Cost / Unit and Net Cost / Unit. */
+export function weightedUnitCost(sumCostTimesUnits: Num, units: Num): number | null {
+  if (typeof units === 'number' && units < 0) return null;
+  return safeDiv(sumCostTimesUnits, units);
+}
+
+export interface PoLine {
+  /** Whole weeks between the order and the end of the window (0 = most recent week). */
+  weeksBack: number;
+  units: number;
+  unitCost: number;
+}
+
+/** Recency weights for New PO Cost, newest week first (Proposed). */
+export const NEW_PO_COST_WEIGHTS = [0.4, 0.3, 0.2, 0.1] as const;
+
+/**
+ * New PO Cost = Σ (weight(week) × units × landed unit cost) ÷ Σ (weight(week) × units) over the last 4 weeks.
+ * Lines older than 4 weeks, with negative units or a negative cost are ignored. No usable lines → null.
+ */
+export function newPoCostWeighted(lines: PoLine[]): number | null {
+  let num = 0;
+  let den = 0;
+  for (const l of lines) {
+    if (!Number.isInteger(l.weeksBack) || l.weeksBack < 0 || l.weeksBack >= NEW_PO_COST_WEIGHTS.length) continue;
+    if (!(l.units > 0) || !(l.unitCost >= 0)) continue;
+    const w = NEW_PO_COST_WEIGHTS[l.weeksBack] * l.units;
+    num += w * l.unitCost;
+    den += w;
+  }
+  return den > 0 ? num / den : null;
+}
+
+/** Cost change from Current PO Cost (HQ) to New PO Cost: $ and %. */
+export function costChange(current: Num, next: Num): Growth {
+  return yoyGrowth(next, current);
 }
 
 // ---------------------------------------------------------------- Purchases (Fresh Report)
@@ -166,9 +213,16 @@ export function totalPurchases(b: PurchaseBreakdown): number {
   return t;
 }
 
-/** Purchase Cost per Unit = Purchases $ ÷ units purchased (not units sold). */
-export function purchaseCostPerUnit(purchases: Num, unitsPurchased: Num): number | null {
-  return safeDiv(purchases, unitsPurchased);
+/** Purchase Cost per Unit = SUM(Total Purchases) ÷ SUM(Volume) — workbook definition, volume sold (legacy source: Biceps). */
+export function purchaseCostPerUnit(totalPurchasesSum: Num, volumeSold: Num): number | null {
+  if (typeof volumeSold === 'number' && volumeSold < 0) return null;
+  return safeDiv(totalPurchasesSum, volumeSold);
+}
+
+/** Purchase Cost per Unit Purchased = Total Purchases ÷ units purchased (Proposed alternative, hidden column). */
+export function purchaseCostPerUnitPurchased(totalPurchasesSum: Num, unitsPurchased: Num): number | null {
+  if (typeof unitsPurchased === 'number' && unitsPurchased < 0) return null;
+  return safeDiv(totalPurchasesSum, unitsPurchased);
 }
 
 /** Fresh GP % = (Sales − Total Purchases) ÷ Sales. Weekly or period to date only. */
@@ -261,4 +315,112 @@ export function yoyGrowth(ty: Num, ly: Num): Growth {
 export function pointsDiff(a: Num, b: Num): number | null {
   if (!ok(a) || !ok(b)) return null;
   return (a - b) * 100;
+}
+
+// ---------------------------------------------------------------- Cost change simulator (read-only what-if)
+
+export const SIM_LIMITS = { max: 999_999.99 } as const;
+
+/**
+ * Validates a simulator input: a positive number with at most 6 integer digits and 2 decimals.
+ * Returns the value rounded to cents, or null when it is not acceptable.
+ */
+export function clampSimInput(raw: unknown): number | null {
+  const n = typeof raw === 'number' ? raw : typeof raw === 'string' && /^\s*\d{1,6}(\.\d{1,2})?\s*$/.test(raw) ? Number(raw) : NaN;
+  if (!Number.isFinite(n) || n <= 0 || n > SIM_LIMITS.max) return null;
+  return Math.round(n * 100) / 100;
+}
+
+/** Rounds a price up to the next .x9 ending ($4.23 → $4.29, $4.30 → $4.39, $4.29 → $4.29). */
+export function roundToX9(price: number): number | null {
+  if (!Number.isFinite(price) || price <= 0) return null;
+  const cents = Math.round(price * 100);
+  const up = Math.ceil((cents - 9) / 10) * 10 + 9;
+  return Math.max(9, up) / 100;
+}
+
+export interface SimInputs {
+  /** Current cost per unit (HQ / recipe). */
+  cost: number;
+  /** Current retail per unit. */
+  retail: number;
+  newCost: number;
+  newRetail?: number | null;
+  /** Units sold over the trailing 52 weeks. */
+  annualUnits: number;
+}
+
+export interface SimResult {
+  marginNow: number | null;
+  marginNewCost: number | null;
+  retailToHold: number | null;
+  marginWithNewRetail: number | null;
+  /** Annual Gross Margin $ change at current retail (new cost). */
+  impactNoRetailChange: number;
+  /** Annual Gross Margin $ change with the new retail (or the retail that holds the margin). */
+  impactWithRetailChange: number;
+}
+
+/** Margin on retail per unit: 1 − cost ÷ retail. */
+export function unitMarginRate(cost: Num, retail: Num): number | null {
+  if (!ok(cost) || !ok(retail)) return null;
+  return safeDiv(retail - cost, retail);
+}
+
+/** The Deli team's spreadsheet: margin today, at the new cost, and the retail needed to hold today's margin. */
+export function simulateCostChange(x: SimInputs): SimResult {
+  const marginNow = unitMarginRate(x.cost, x.retail);
+  const marginNewCost = unitMarginRate(x.newCost, x.retail);
+  const retailToHold = marginNow !== null && marginNow < 1 ? roundToX9(x.newCost / (1 - marginNow)) : null;
+  const retailUsed = x.newRetail ?? retailToHold;
+  const units = Math.max(0, x.annualUnits);
+  return {
+    marginNow,
+    marginNewCost,
+    retailToHold,
+    marginWithNewRetail: retailUsed === null ? null : unitMarginRate(x.newCost, retailUsed),
+    impactNoRetailChange: (x.cost - x.newCost) * units,
+    impactWithRetailChange: retailUsed === null ? 0 : (retailUsed - x.newCost - (x.retail - x.cost)) * units,
+  };
+}
+
+// ---------------------------------------------------------------- New items watch
+
+export const NEW_ITEM_WEEKS = 12;
+
+/** Weeks on sale through `endWeek`, counting the first week of sales as week 1 (0 before launch). */
+export function weeksOnSale(firstWeek: number, endWeek: number): number {
+  return endWeek < firstWeek ? 0 : endWeek - firstWeek + 1;
+}
+
+/** An item is "new" during its first 12 weeks since first sale: week 12 is included, week 13 is not. */
+export function inNewItemWindow(weeks: number): boolean {
+  return Number.isInteger(weeks) && weeks >= 1 && weeks <= NEW_ITEM_WEEKS;
+}
+
+// ---------------------------------------------------------------- Margin after loss (Proposed)
+
+/** Expected total loss rates the Deli team subtracts from gross profit today (Proposed defaults), by department order. */
+export const DEFAULT_EXPECTED_LOSS: Record<string, number> = { Meat: 0.04, Produce: 0.08, Deli: 0.12, Bakery: 0.09, Seafood: 0.08, Floral: 0.08 };
+export const EXPECTED_LOSS_LIMITS = { min: 0, max: 0.3 } as const;
+
+/** Clamps an expected loss rate to 0–30 %. Non-numbers fall back to null. */
+export function clampExpectedLoss(raw: unknown): number | null {
+  const n = typeof raw === 'number' ? raw : NaN;
+  if (!Number.isFinite(n)) return null;
+  return Math.round(clamp(n, EXPECTED_LOSS_LIMITS.min, EXPECTED_LOSS_LIMITS.max) * 1000) / 1000;
+}
+
+/** Margin After Loss % = Gross Margin Rate − loss rate (actual known loss ÷ sales, or the expected rate). */
+export function marginAfterLoss(gmRate: Num, lossRate: Num): number | null {
+  if (!ok(gmRate) || !ok(lossRate)) return null;
+  return gmRate - lossRate;
+}
+
+// ---------------------------------------------------------------- Shipments vs sales (Proposed)
+
+/** Sell-through % = units sold ÷ units shipped (warehouse bill-out). */
+export function sellThrough(unitsSold: Num, unitsShipped: Num): number | null {
+  if (typeof unitsShipped === 'number' && unitsShipped < 0) return null;
+  return safeDiv(unitsSold, unitsShipped);
 }

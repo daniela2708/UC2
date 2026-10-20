@@ -1659,3 +1659,194 @@ table.hier thead th {
 .banner-more:hover {
   color: var(--dark);
 }
+
+.tab-divider {
+  align-self: center;
+  margin: 0 6px 0 14px;
+  padding-left: 16px;
+  border-left: 1px solid var(--n3);
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--n4);
+  white-space: nowrap;
+}
+
+.ic-picker-row {
+  align-items: flex-end;
+}
+.item-picker .text-input {
+  width: 340px;
+}
+.po-scroll {
+  max-height: 420px;
+  overflow: auto;
+}
+.mini-table tr.is-hot td {
+  background: #fdf0ea;
+}
+
+/* Wide tables: hierarchy column sticky on horizontal scroll, Total row pinned under the header */
+table.hier th:first-child,
+table.hier td:first-child {
+  position: sticky;
+  left: 0;
+  z-index: 1;
+  background: var(--white);
+  box-shadow: 1px 0 0 var(--n2);
+}
+table.hier thead th:first-child {
+  z-index: 3;
+}
+table.hier tr.total-row td {
+  position: sticky;
+  top: 41px;
+  z-index: 2;
+  background: #faf9f5;
+}
+table.hier tr.total-row td:first-child {
+  z-index: 3;
+}
+table.hier tbody tr:not(.total-row):hover td:first-child {
+  background: #faf9f5;
+}
+.defs-views {
+  font-size: 12.5px;
+  color: #4a4845;
+}
+.defs-q-title {
+  margin: 22px 10px 8px;
+  font-size: 15px;
+}
+.defs-questions {
+  list-style: none;
+  margin: 0 0 12px;
+  padding: 0 10px;
+  display: grid;
+  gap: 10px;
+  font-size: 13.5px;
+}
+.defs-questions li {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 2px 10px;
+  align-items: start;
+}
+.defs-questions li .defs-recon {
+  grid-column: 2;
+}
+.flip-delta {
+  font-size: 12px;
+  color: var(--n5);
+}
+
+/* Simulator */
+.sim-modal {
+  background: var(--white);
+  width: min(860px, 100%);
+  padding: 22px 24px 24px;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+  max-height: calc(100vh - 80px);
+  overflow: auto;
+}
+.sim-modal h2 {
+  margin: 0;
+  font-size: 20px;
+}
+.sim-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 2fr) minmax(0, 3fr);
+  gap: 22px;
+  margin-top: 12px;
+}
+.sim-inputs {
+  display: grid;
+  gap: 6px;
+  align-content: start;
+}
+.sim-inputs .text-input {
+  width: 100%;
+  max-width: none;
+}
+.sim-out td {
+  white-space: normal;
+}
+@media (max-width: 800px) {
+  .sim-grid {
+    grid-template-columns: 1fr;
+  }
+}
+.cell-bar .track.banded {
+  position: relative;
+  width: 72px;
+  overflow: visible;
+}
+.cell-bar .track .band {
+  position: absolute;
+  top: -3px;
+  bottom: -3px;
+  background: rgba(46, 125, 79, 0.18);
+  border-left: 1px solid rgba(46, 125, 79, 0.6);
+  border-right: 1px solid rgba(46, 125, 79, 0.6);
+  border-radius: 2px;
+}
+.cell-bar .track.banded .fill {
+  position: relative;
+}
+.rules-popover {
+  width: 460px;
+  max-height: none;
+}
+.flag-rules .rules-grid .text-input {
+  width: 110px;
+}
+.store-drill {
+  margin-top: 4px;
+  border-top: 1px solid var(--n3);
+  padding: 12px 16px 6px;
+}
+tr.row-muted td,
+.is-discontinued {
+  color: var(--n4);
+}
+.table-export {
+  gap: 6px;
+}
+.table-export .popover-anchor {
+  pointer-events: auto;
+}
+.col-chooser {
+  left: auto;
+  right: 0;
+  width: 340px;
+  max-height: 480px;
+}
+.col-group {
+  border: 0;
+  margin: 0 0 6px;
+  padding: 0;
+}
+.col-group legend {
+  font-family: var(--mono);
+  font-size: 10.5px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--n5);
+  padding: 6px 8px 2px;
+}
+.assumptions-popover {
+  width: 260px;
+  max-height: none;
+  left: auto;
+  right: 0;
+}
+.assumption-row {
+  display: grid;
+  grid-template-columns: 1fr 70px auto;
+}
+.assumption-row .text-input {
+  min-width: 0;
+  width: 70px;
+  height: 28px;
+}

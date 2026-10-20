@@ -20,7 +20,7 @@ import {
   type HolidayId,
 } from './calendar';
 import { hash01, hashNormal, hashSigned } from './prng';
-import { CATS, DEPTS, ITEMS, type Item } from './products';
+import { BASE_ITEM_COUNT, CATS, DEPTS, ITEMS, type Item } from './products';
 import { isOpen, STORE_BY_ID, STORES } from './stores';
 import { EXTREME_ENTRY_DOLLARS, PLANTED } from './planted';
 import { PURCHASE_CHANNELS, type PurchaseBreakdown } from '../lib/kpis';
@@ -126,7 +126,10 @@ function tagMultiplier(item: Item, w: number): number {
   const woy = w % 52;
   for (const tag in item.tags) {
     const peak = item.tags[tag];
-    if (tag === 'xm') {
+    if (tag === 'zz') {
+      // Seasonal-only item (pie pumpkins): sells from Labor Day to Halloween, barely otherwise.
+      if (woy < 35 || woy > 43) m *= 0.02;
+    } else if (tag === 'xm') {
       if (HOLIDAY_SETS.christmasEve[w]) m *= peak;
       else if (HOLIDAY_SETS.newYear[w]) m *= 1 + (peak - 1) * 0.4;
     } else if (tag in TAG_SET) {
@@ -291,7 +294,9 @@ export function buildModel(): Model {
   const mixTot = new Float64Array(NDP * NW);
   for (const it of ITEMS) {
     for (let w = 0; w < NW; w++) {
-      const v = it.weight * tagMultiplier(it, w) * (1 + 0.06 * hashNormal(it.idx, w, 103));
+      // Launched items sell nothing before launch and ramp up over 4 weeks.
+      const ramp = it.launchWeek === undefined ? 1 : w < it.launchWeek ? 0 : Math.min(1, 0.4 + 0.2 * (w - it.launchWeek));
+      const v = ramp * it.weight * tagMultiplier(it, w) * (1 + 0.06 * hashNormal(it.idx, w, 103));
       mix[it.idx * NW + w] = v;
       mixTot[it.dept * NW + w] += v;
     }
@@ -331,7 +336,11 @@ export function buildModel(): Model {
       // Cost: PO cost tracks retail at the target margin, with item-specific drift.
       let cost: number;
       if (it.composite) {
-        const std = price * (1 - DISCOUNT[d]) * (1 - it.margin);
+        let std = price * (1 - DISCOUNT[d]) * (1 - it.margin);
+        // Slices take the pie's recipe cost divided by the slice count.
+        const so = it.composite.sliceOf;
+        const pie = so ? ITEMS.find((x) => x.name === so.item) : undefined;
+        if (so && pie?.composite) std = pie.composite.standardCost / so.slices;
         it.composite.standardCost = std;
         cost = w >= it.composite.updatedWeek ? std : std * 0.94;
       } else {
@@ -402,12 +411,14 @@ export function buildModel(): Model {
     if (s) lossPosted[s.idx * NW + PLANTED.incomplete.week] = 0;
   }
   const storeDeptLoss = new Float32Array(NS * NDP);
-  for (const st of STORES) for (let d = 0; d < NDP; d++) storeDeptLoss[st.idx * NDP + d] = Math.exp(0.3 * hashNormal(st.id, d, 205));
+  // Each store's loss factor by department runs 0.6–1.6× (handling, staffing and layout differ).
+  for (const st of STORES)
+    for (let d = 0; d < NDP; d++) storeDeptLoss[st.idx * NDP + d] = (0.6 + 1.0 * hash01(st.id, d, 205)) / st.lossFactor;
   for (let c = 0; c < NC; c++) {
     const d = CATS[c].dept;
     for (const st of STORES) {
       const s = st.idx;
-      const aff = st.size * Math.exp(0.12 * hashNormal(st.id, d, 201)) * Math.exp(0.08 * hashNormal(st.id, c, 202));
+      const aff = st.size * Math.exp(0.12 * hashNormal(st.id, d, 201)) * Math.exp(0.15 * hashNormal(st.id, c, 202));
       for (let w = 0; w < NW; w++) {
         if (!isOpen(st, w)) continue;
         const ramp = st.openWeek > 0 ? Math.min(1, 0.6 + 0.05 * (w - st.openWeek)) : 1;
@@ -485,16 +496,16 @@ function buildEvents(m: Model): LossEvent[] {
   const events: LossEvent[] = [];
   const taken = new Set<number>();
   // Cumulative item weights by chain sales, for sampling.
-  const cum = new Float64Array(NI);
+  const cum = new Float64Array(BASE_ITEM_COUNT);
   let acc = 0;
-  for (let i = 0; i < NI; i++) {
+  for (let i = 0; i < BASE_ITEM_COUNT; i++) {
     acc += BASE_WEEKLY[ITEMS[i].dept] * ITEMS[i].weight;
     cum[i] = acc;
   }
   const pick = (u: number) => {
     const target = u * acc;
     let lo = 0;
-    let hi = NI - 1;
+    let hi = BASE_ITEM_COUNT - 1;
     while (lo < hi) {
       const mid = (lo + hi) >> 1;
       if (cum[mid] < target) lo = mid + 1;
@@ -510,12 +521,33 @@ function buildEvents(m: Model): LossEvent[] {
   for (let w = 0; w <= LAST_COMPLETE_WEEK; w++) {
     const n = 4 + Math.floor(hash01(w, 301) * 4);
     for (let e = 0; e < n; e++) {
-      const entry = hash01(w, e, 304) < 0.62;
-      const i = entry ? pick(hash01(w, e, 302)) : bigItems[Math.floor(hash01(w, e, 302) * bigItems.length)];
-      const s = entry ? Math.floor(hash01(w, e, 303) * NS) : bigStores[Math.floor(hash01(w, e, 303) * bigStores.length)];
-      const base = cellBaseLoss(m, i, s, w);
+      // About 30 % of flags are keyed errors; the rest is real high loss to review.
+      const entry = hash01(w, e, 304) < 0.28;
+      let i = entry ? pick(hash01(w, e, 302)) : bigItems[Math.floor(hash01(w, e, 302) * bigItems.length)];
+      let s = entry ? Math.floor(hash01(w, e, 303) * NS) : bigStores[Math.floor(hash01(w, e, 303) * bigStores.length)];
+      let base = cellBaseLoss(m, i, s, w);
+      // Operational losses (cooler failure, over-ordering) land where weekly loss is already material.
+      for (let t = 1; !entry && base < 85 && t < 6; t++) {
+        i = bigItems[Math.floor(hash01(w, e, 302 + 10 * t) * bigItems.length)];
+        s = bigStores[Math.floor(hash01(w, e, 303 + 10 * t) * bigStores.length)];
+        base = cellBaseLoss(m, i, s, w);
+      }
       if (base <= 0) continue;
-      let factor = entry ? (hash01(w, e, 305) < 0.7 ? 10 : 100) : Math.min(18, Math.max(4, (700 + 1800 * hash01(w, e, 306)) / base));
+      let factor = entry ? (hash01(w, e, 305) < 0.7 ? 10 : 100) : Math.min(14, Math.max(4, (1100 + 1500 * hash01(w, e, 306)) / base));
+      if (!entry) {
+        // Real high loss stays within 2.5–14× the item-store 26-week average, so it never reads as a keyed error.
+        let hist = 0;
+        let n = 0;
+        for (let x = Math.max(0, w - 26); x < w; x++) {
+          hist += cellBaseLoss(m, i, s, x);
+          n++;
+        }
+        const avg = n ? hist / n : 0;
+        if (avg <= 0) continue;
+        const want = base * factor;
+        if (want / avg > 14) factor = (14 * avg) / base;
+        if ((base * factor) / avg < 2.5) continue;
+      }
       if (base * factor > 9_000) factor = entry ? 10 : 9_000 / base;
       if (base * factor > 9_000) continue;
       const key = cellKey(i, s, w);
@@ -537,7 +569,7 @@ function buildEvents(m: Model): LossEvent[] {
   for (const w of POST_HOLIDAY_WEEKS) {
     if (w > LAST_COMPLETE_WEEK) continue;
     let made = 0;
-    for (let tries = 0; tries < 80 && made < 7; tries++) {
+    for (let tries = 0; tries < 120 && made < 10; tries++) {
       const i = bigItems[Math.floor(hash01(w, tries, 311) * bigItems.length)];
       const s = bigStores[Math.floor(hash01(w, tries, 312) * bigStores.length)];
       const key = cellKey(i, s, w);
@@ -555,6 +587,15 @@ function buildEvents(m: Model): LossEvent[] {
       taken.add(key);
       events.push({ item: i, store: s, week: w, lossCost: want, lossUnits: want / m.poCost[i * NW + w], kind: 'overstock' });
       made++;
+    }
+  }
+  {
+    const p = PLANTED.soup;
+    const it = ITEMS.find((x) => x.name === p.item);
+    const st = STORE_BY_ID.get(p.store);
+    if (it && st) {
+      const cost = p.lossUnits * m.poCost[it.idx * NW + p.week];
+      events.push({ item: it.idx, store: st.idx, week: p.week, lossCost: cost, lossUnits: p.lossUnits, kind: 'planted' });
     }
   }
   for (const p of [PLANTED.fatFinger, PLANTED.extreme]) {
@@ -587,7 +628,7 @@ export { EXTREME_ENTRY_DOLLARS };
 
 const PURCHASE_BASE: Record<string, number[]> = {
   //            Meat    Produce Deli    Bakery  Seafood Floral
-  whse: [0.7, 0.55, 0.44, 0.3, 0.66, 0.38],
+  whse: [0.69, 0.55, 0.46, 0.3, 0.66, 0.38],
   dsd: [0.03, 0.05, 0.07, 0.14, 0.04, 0.05],
   packaging: [0.012, 0.008, 0.03, 0.035, 0.01, 0.02],
   reclaim: [0.001, 0.001, 0.001, 0.001, 0.001, 0.0005],
@@ -636,8 +677,8 @@ export function emptyBreakdown(): PurchaseBreakdown {
  * holidays are stocked the week before, and deliveries land unevenly (a chain-wide warehouse rhythm plus
  * store-level noise). Both noise terms telescope, so over a period purchases still match sales.
  */
-const TIMING_CHAIN = [0.07, 0.05, 0.04, 0.035, 0.12, 0.22];
-const TIMING_STORE = [0.12, 0.09, 0.08, 0.07, 0.2, 0.35];
+const TIMING_CHAIN = [0.07, 0.055, 0.075, 0.07, 0.07, 0.2];
+const TIMING_STORE = [0.12, 0.09, 0.1, 0.09, 0.11, 0.33];
 export const PURCHASE_LEAD = 0.55;
 export function purchaseTiming(d: number, s: number, w: number): number {
   const id = STORES[s].id;

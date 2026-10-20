@@ -42,6 +42,14 @@ export const PLANTED = {
     dsdShare: 0.09,
     whseLift: 0,
   },
+  /** Deli soup entry error: store 116 sold 1 unit and scanned out 4,000 in W40. */
+  soup: {
+    item: 'Chicken Noodle Soup 16 oz',
+    store: 116,
+    week: globalWeek(2026, 40),
+    unitsSold: 1,
+    lossUnits: 4000,
+  },
   /** 6. Stores that have not posted known loss for W42. */
   incomplete: {
     stores: [213, 386, 290],

@@ -11,7 +11,9 @@ export function StorePopover({
   districts,
   stores,
   onChange,
+  disabledReason,
 }: {
+  disabledReason?: string;
   region: number;
   districts: string[];
   stores: number[];
@@ -73,7 +75,7 @@ export function StorePopover({
   const selectedCount = STORES.filter((s) => (region === 0 || s.region === region) && (dSet.has(s.district) || sSet.has(s.id))).length;
 
   return (
-    <Field label="District & Store">
+    <Field label="District & Store" disabledReason={disabledReason}>
       <div className="popover-anchor" ref={ref}>
         <button
           ref={buttonRef}
@@ -82,6 +84,7 @@ export function StorePopover({
           aria-haspopup="dialog"
           aria-expanded={open}
           aria-controls={id}
+          disabled={!!disabledReason}
           onClick={() => setOpen((o) => !o)}
         >
           <span>{label}</span>

@@ -112,13 +112,29 @@ export function Field({
 }
 
 /** Number with a small proportional bar, for scanning a column. */
-export function CellBar({ value, max, text, warm = false }: { value: number | null; max: number; text: string; warm?: boolean }) {
-  const w = value === null || !Number.isFinite(value) || max <= 0 ? 0 : Math.max(0, Math.min(1, value / max));
+export function CellBar({
+  value,
+  max,
+  text,
+  warm = false,
+  band,
+}: {
+  value: number | null;
+  max: number;
+  text: string;
+  warm?: boolean;
+  /** Target band, drawn as a shaded range on the track. */
+  band?: { lo: number; hi: number };
+}) {
+  const at = (v: number) => (max <= 0 ? 0 : Math.max(0, Math.min(1, v / max)) * 100);
+  const w = value === null || !Number.isFinite(value) ? 0 : at(value);
+  const below = band && value !== null && value < band.lo;
   return (
-    <span className="cell-bar">
+    <span className="cell-bar" title={band ? `Target ${(band.lo * 100).toFixed(0)}–${(band.hi * 100).toFixed(0)} %` : undefined}>
       {text}
-      <span className="track" aria-hidden="true">
-        <span className={`fill${warm ? ' warm' : ''}`} style={{ width: `${(w * 100).toFixed(1)}%` }} />
+      <span className={`track${band ? ' banded' : ''}`} aria-hidden="true">
+        {band && <span className="band" style={{ left: `${at(band.lo)}%`, width: `${at(band.hi) - at(band.lo)}%` }} />}
+        <span className={`fill${warm || below ? ' warm' : ''}`} style={{ width: `${w.toFixed(1)}%` }} />
       </span>
     </span>
   );

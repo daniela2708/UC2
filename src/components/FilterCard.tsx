@@ -113,7 +113,7 @@ export function FilterCard() {
           />
         </Field>
         {t.mode !== 'custom' && <Select label="Period" value={periodValue} options={periodOptions} onChange={onPeriod} disabledReason={timeOff} />}
-        {t.mode === 'fiscal' && t.grain !== 'week' && (
+        {t.mode === 'fiscal' && t.grain !== 'week' && t.grain !== 'day' && (
           <Select
             label="Fiscal year"
             value={String(t.fy)}
@@ -144,6 +144,9 @@ export function FilterCard() {
             disabledReason={timeOff}
           />
         )}
+        {t.mode === 'fiscal' && t.grain === 'day' && (
+          <DateInput label="Day" value={t.day} onChange={(d) => setTime({ day: d })} disabledReason={timeOff} />
+        )}
         {t.mode === 'fiscal' && t.grain === 'week' && (
           <DateInput label="Week beginning (Sunday)" value={t.weekStart} onChange={(d) => setTime({ weekStart: snapToSunday(d) })} disabledReason={timeOff} />
         )}
@@ -170,6 +173,11 @@ export function FilterCard() {
           {timeOff ? 'FY2026 year to date · as of 10/18/2026' : `${range.label} · ${range.fyLabel} ${fw(sw)}${sw !== ew ? `–${fw(ew)}` : ''}`}
           {!timeOff && t.mode === 'fiscal' && t.grain === 'holiday' && ' · LY aligned to the same holiday'}
         </span>
+        <span className="filter-spacer" />
+        <button type="button" className="btn-outline" onClick={() => update(actions.reset())}>
+          <RotateCcw size={14} aria-hidden="true" />
+          Reset filters
+        </button>
       </div>
 
       <div className="filter-row">
@@ -185,8 +193,8 @@ export function FilterCard() {
             { value: '-1', label: 'All fresh' },
             ...DEPTS.map((d) => ({
               value: String(d.idx),
-              label: state.tab === 'plu' && !COMPOSITE_DEPTS.has(d.name) ? `${d.name} (no composite PLUs)` : d.name,
-              disabled: state.tab === 'plu' && !COMPOSITE_DEPTS.has(d.name),
+              label: state.tab === 'cost' && !COMPOSITE_DEPTS.has(d.name) ? `${d.name} (no composite PLUs)` : d.name,
+              disabled: state.tab === 'cost' && !COMPOSITE_DEPTS.has(d.name),
             })),
           ]}
           onChange={(v) => update(actions.dept(Number(v)))}
@@ -217,19 +225,29 @@ export function FilterCard() {
           value={String(state.region)}
           options={[{ value: '0', label: 'All regions' }, ...REGIONS.map((r) => ({ value: String(r), label: `Region ${r}` }))]}
           onChange={(v) => update(actions.region(Number(v)))}
+          disabledReason={unused.stores}
         />
         <StorePopover
           region={state.region}
           districts={state.districts}
           stores={state.stores}
           onChange={(d, s) => update(actions.places(d, s))}
+          disabledReason={unused.stores}
         />
-        <SkuSearch item={state.item} onSelect={(i) => update(actions.item(i))} disabledReason={productOff} />
-        <span className="filter-spacer" />
-        <button type="button" className="btn-outline" onClick={() => update(actions.reset())}>
-          <RotateCcw size={14} aria-hidden="true" />
-          Reset filters
-        </button>
+        <Select
+          className="w-region"
+          label="Cost type"
+          value={state.costType}
+          options={[
+            { value: 'all', label: 'All' },
+            { value: 'UPC', label: 'UPC' },
+            { value: 'PLU', label: 'PLU' },
+            { value: 'RW', label: 'Random weight' },
+          ]}
+          onChange={(v) => update((s) => ({ ...s, costType: v as typeof s.costType, item: -1 }))}
+          disabledReason={unused.sku && state.tab === 'fresh' ? 'The Fresh Report works by department, category and subcategory.' : undefined}
+        />
+        <SkuSearch item={state.item} onSelect={(i) => update(actions.item(i))} disabledReason={unused.sku ?? productOff} />
       </div>
     </section>
   );

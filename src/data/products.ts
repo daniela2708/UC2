@@ -1,5 +1,5 @@
-import { CATALOG, type ItemFlag, type Volatility } from './catalog';
-import { AS_OF_DAY, dayFromYMD, formatMonth, weekOfDay, WEEK_COUNT } from './calendar';
+import { CATALOG, type ItemFlag, type SubSpec, type Volatility } from './catalog';
+import { AS_OF_DAY, dayFromYMD, formatMonth, globalWeek, weekOfDay, WEEK_COUNT } from './calendar';
 import { hash01, hashNormal } from './prng';
 import type { Uom } from '../lib/kpis';
 
@@ -40,6 +40,10 @@ export interface Composite {
   ageMonths: number;
   /** Standard cost per unit in use since the last update. */
   standardCost: number;
+  /** Recipe family, as grouped in the Deli Excel files. */
+  family: string;
+  /** Slices are costed as the pie's cost divided by the slice count. */
+  sliceOf?: { item: string; slices: number };
 }
 
 export interface Item {
@@ -68,11 +72,25 @@ export interface Item {
   freightRate: number;
   /** Relative known-loss propensity (before department normalisation). */
   lossFactor: number;
+  /**
+   * How cost is kept. UPC: packaged, average cost in HQ is reliable. PLU: sold by the unit without a
+   * manufacturer barcode (e.g. avocados, Deli composite items). RW: random weight, sold by the pound.
+   */
+  costType: CostType;
+  /** First week on sale (global week), for items launched during the horizon. */
+  launchWeek?: number;
   composite?: Composite;
 }
 
-/** Target gross margin on net sales at list − trade cost, by department. */
-const DEPT_MARGIN = [0.31, 0.4, 0.45, 0.53, 0.32, 0.55];
+export type CostType = 'UPC' | 'PLU' | 'RW';
+export const COST_TYPE_LABEL: Record<CostType, string> = { UPC: 'UPC', PLU: 'PLU', RW: 'Random weight' };
+
+/**
+ * Target margin on net sales at the market cost, by department. Calibrated so item-level Gross Margin Rate on
+ * Gross Sales at real-time PO cost (freight included) lands at: Meat 31–33 %, Produce 44–48 %, Deli 55–56 %,
+ * Bakery 58–60 %, Seafood 34–37 %, Floral 60–65 %.
+ */
+const DEPT_MARGIN = [0.35, 0.5, 0.59, 0.615, 0.39, 0.65];
 const SUB_LOSS: Record<string, number> = {
   Berries: 1.7,
   'Salad greens': 1.4,
@@ -97,6 +115,8 @@ const SUB_LOSS: Record<string, number> = {
 export interface ComponentDef {
   key: string;
   name: string;
+  /** No longer bought; kept in old recipes until they are re-costed. */
+  discontinued?: boolean;
   /** Cost change from 03/2025 to 10/2026. */
   change: number;
 }
@@ -124,7 +144,7 @@ export const COMPONENTS: Record<string, ComponentDef> = {
   container: { key: 'container', name: 'Hot food container', change: 0.09 },
   trayMeat: { key: 'trayMeat', name: 'Tray meats', change: 0.05 },
   trayCheese: { key: 'trayCheese', name: 'Tray cheeses', change: 0.06 },
-  crackers: { key: 'crackers', name: 'Crackers and bread', change: 0.03 },
+  crackers: { key: 'crackers', name: 'Club crackers (discontinued)', change: 0.03, discontinued: true },
   garnish: { key: 'garnish', name: 'Garnish and dip', change: 0.05 },
   trayLid: { key: 'trayLid', name: 'Platter and lid', change: 0.08 },
   cakeBase: { key: 'cakeBase', name: 'Cake base', change: 0.06 },
@@ -197,12 +217,15 @@ const PLANTED_UPDATE: Record<string, [number, number]> = { '16 in. Pepperoni Piz
 
 function updateMonth(name: string, i: number): [number, number] {
   if (PLANTED_UPDATE[name]) return PLANTED_UPDATE[name];
+  if (/Slice$/.test(name)) return updateMonth(name.replace(/ Slice$/, ''), ITEM_BY_NAME_EARLY.get(name.replace(/ Slice$/, '')) ?? i);
   const h = hash01(i, 401);
   if (h < 0.2) return [2026, 1 + Math.floor(hash01(i, 402) * 8)];
   return [2025, 3 + Math.floor(hash01(i, 403) * 9)];
 }
 
 const AS_OF_MONTHS = 2026 * 12 + 10;
+/** Item indexes by name while building (slices look up their pie). */
+const ITEM_BY_NAME_EARLY = new Map<string, number>();
 /** Items whose shrink is structurally higher than their subcategory (fresh fillets lose weight and date out fast). */
 const ITEM_LOSS: Record<string, number> = { 'Atlantic Salmon Fillet': 2.2 };
 
@@ -262,6 +285,97 @@ function parseTags(s: string | undefined): Record<string, number> {
   return out;
 }
 
+
+interface ItemContext {
+  d: number;
+  cat: Cat;
+  sub: Sub;
+  subSpec: SubSpec;
+  weight: number;
+}
+
+function buildItem(raw: string, ctx: ItemContext): Item {
+  const { d, cat, sub, subSpec } = ctx;
+          const [name, priceStr, flagStr, tagStr] = raw.split('|');
+  const flag = (flagStr || subSpec.flag) as ItemFlag;
+  const i = ITEMS.length;
+  const rw = flag === 'w';
+  const uom: Uom = rw ? 'lb' : 'ea';
+  const codeType: 'UPC' | 'PLU' = flag === 'e' ? 'UPC' : 'PLU';
+  const code = uniqueCode((a) => {
+    if (codeType === 'UPC') {
+      const mfr = String(30000 + Math.floor(hash01(cat.idx, 501, a) * 59999)).padStart(5, '0');
+      const item = String(Math.floor(hash01(i, 502, a) * 99999)).padStart(5, '0');
+      const d11 = `0${mfr}${item}`;
+      return `${d11}${upcCheck(d11)}`;
+    }
+    if (a === 0 && KNOWN_PLU[name]) return KNOWN_PLU[name];
+    if (d === 1) {
+      const base = String(3000 + Math.floor(hash01(i, 503, a) * 2000));
+      return /^Organic/.test(name) ? `9${base}` : base;
+    }
+    return `${PLU_PREFIX[d]}${String(Math.floor(hash01(i, 504, a) * 1000)).padStart(3, '0')}`;
+  });
+  const vol: Volatility | 'none' =
+    flag === 'c' ? 'none' : subSpec.vol ?? (rw ? 'med' : 'step');
+  const marginNoise = hashNormal(i, 505) * 0.035;
+  const subLoss = SUB_LOSS[subSpec.name === 'Rolls' && d === 4 ? 'Rolls_Sushi' : subSpec.name] ?? 1;
+  const item: Item = {
+    idx: i,
+    code,
+    codeType,
+    name,
+    dept: d,
+    cat: cat.idx,
+    sub: sub.idx,
+    uom,
+    rw,
+    flag,
+    vol,
+    basePrice: Number(priceStr),
+    weight: ctx.weight,
+    margin: Math.min(0.68, Math.max(0.12, DEPT_MARGIN[d] + marginNoise)),
+    tags: parseTags(tagStr),
+    tradeRate: flag === 'c' ? 0 : flag === 'e' ? 0.03 + 0.04 * hash01(i, 506) : 0.015 + 0.025 * hash01(i, 506),
+    offInvoiceRate: flag !== 'c' && hash01(i, 507) < 0.4 ? 0.01 + 0.02 * hash01(i, 508) : 0,
+    dealRate: flag === 'c' ? 0 : 0.06 + 0.06 * hash01(i, 509),
+    scanbackRate: flag === 'e' ? 0.03 + 0.03 * hash01(i, 510) : 0,
+    freightRate: flag !== 'c' && hash01(i, 511) < 0.3 ? 0.01 + 0.015 * hash01(i, 512) : 0,
+    lossFactor: (ITEM_LOSS[name] ?? 1) * subLoss * Math.exp(hashNormal(i, 513) * 0.25),
+    costType: flag === 'e' ? 'UPC' : flag === 'w' ? 'RW' : 'PLU',
+  };
+  if (flag === 'c' && subSpec.recipe) {
+    const recipe = RECIPES[subSpec.recipe](name);
+    const total = recipe.reduce((a, [, s]) => a + s, 0);
+    const [uy, um] = updateMonth(name, i);
+    const updatedDay = dayFromYMD(uy, um, 1);
+    item.margin = name === '16 in. Pepperoni Pizza' ? 0.45 : Math.min(0.66, Math.max(0.42, (d === 2 ? 0.56 : 0.6) + marginNoise));
+    const family =
+      subSpec.recipe === 'pizza'
+        ? 'Pizza & stromboli'
+        : subSpec.recipe === 'sub'
+          ? 'Sandwiches & subs'
+          : subSpec.recipe === 'tray'
+            ? 'Platters'
+            : subSpec.recipe === 'cake'
+              ? 'Bakery cakes'
+              : /Fried|Tender/.test(name)
+                ? 'Chicken'
+                : 'Meals';
+    item.composite = {
+      family,
+      sliceOf: /Slice$/.test(name) ? { item: name.replace(/ Slice$/, ''), slices: 8 } : undefined,
+      components: recipe.map(([key, share]) => ({ key, name: COMPONENTS[key].name, share: share / total })),
+      updatedWeek: Math.max(0, Math.min(WEEK_COUNT - 1, weekOfDay(updatedDay))),
+      updatedLabel: formatMonth(updatedDay),
+      ageMonths: AS_OF_MONTHS - (uy * 12 + um),
+      standardCost: 0,
+    };
+  }
+  ITEM_BY_NAME_EARLY.set(name, i);
+  return item;
+}
+
 CATALOG.forEach((deptSpec, d) => {
   const dept: Dept = { idx: d, name: deptSpec.name, cats: [] };
   DEPTS.push(dept);
@@ -278,73 +392,56 @@ CATALOG.forEach((deptSpec, d) => {
       const zipf = subSpec.items.map((_, k) => (0.75 + 0.5 * hash01(sub.idx, k, 31)) / Math.pow(k + 1, 0.85));
       const zipfSum = zipf.reduce((a, b) => a + b, 0);
       subSpec.items.forEach((raw, k) => {
-        const [name, priceStr, flagStr, tagStr] = raw.split('|');
-        const flag = (flagStr || subSpec.flag) as ItemFlag;
-        const i = ITEMS.length;
-        const rw = flag === 'w';
-        const uom: Uom = rw ? 'lb' : 'ea';
-        const codeType: 'UPC' | 'PLU' = flag === 'e' ? 'UPC' : 'PLU';
-        const code = uniqueCode((a) => {
-          if (codeType === 'UPC') {
-            const mfr = String(30000 + Math.floor(hash01(cat.idx, 501, a) * 59999)).padStart(5, '0');
-            const item = String(Math.floor(hash01(i, 502, a) * 99999)).padStart(5, '0');
-            const d11 = `0${mfr}${item}`;
-            return `${d11}${upcCheck(d11)}`;
-          }
-          if (a === 0 && KNOWN_PLU[name]) return KNOWN_PLU[name];
-          if (d === 1) {
-            const base = String(3000 + Math.floor(hash01(i, 503, a) * 2000));
-            return /^Organic/.test(name) ? `9${base}` : base;
-          }
-          return `${PLU_PREFIX[d]}${String(Math.floor(hash01(i, 504, a) * 1000)).padStart(3, '0')}`;
-        });
-        const vol: Volatility | 'none' =
-          flag === 'c' ? 'none' : subSpec.vol ?? (rw ? 'med' : 'step');
-        const marginNoise = hashNormal(i, 505) * 0.035;
-        const subLoss = SUB_LOSS[subSpec.name === 'Rolls' && d === 4 ? 'Rolls_Sushi' : subSpec.name] ?? 1;
-        const item: Item = {
-          idx: i,
-          code,
-          codeType,
-          name,
-          dept: d,
-          cat: cat.idx,
-          sub: sub.idx,
-          uom,
-          rw,
-          flag,
-          vol,
-          basePrice: Number(priceStr),
+        const item = buildItem(raw, {
+          d,
+          cat,
+          sub,
+          subSpec,
           weight: (catSpec.weight / catWeightSum) * (subSpec.weight / subWeightSum) * (zipf[k] / zipfSum),
-          margin: Math.min(0.68, Math.max(0.12, DEPT_MARGIN[d] + marginNoise)),
-          tags: parseTags(tagStr),
-          tradeRate: flag === 'c' ? 0 : flag === 'e' ? 0.03 + 0.04 * hash01(i, 506) : 0.015 + 0.025 * hash01(i, 506),
-          offInvoiceRate: flag !== 'c' && hash01(i, 507) < 0.4 ? 0.01 + 0.02 * hash01(i, 508) : 0,
-          dealRate: flag === 'c' ? 0 : 0.06 + 0.06 * hash01(i, 509),
-          scanbackRate: flag === 'e' ? 0.03 + 0.03 * hash01(i, 510) : 0,
-          freightRate: flag !== 'c' && hash01(i, 511) < 0.3 ? 0.01 + 0.015 * hash01(i, 512) : 0,
-          lossFactor: (ITEM_LOSS[name] ?? 1) * subLoss * Math.exp(hashNormal(i, 513) * 0.25),
-        };
-        if (flag === 'c' && subSpec.recipe) {
-          const recipe = RECIPES[subSpec.recipe](name);
-          const total = recipe.reduce((a, [, s]) => a + s, 0);
-          const [uy, um] = updateMonth(name, i);
-          const updatedDay = dayFromYMD(uy, um, 1);
-          item.margin = name === '16 in. Pepperoni Pizza' ? 0.41 : Math.min(0.6, Math.max(0.3, 0.44 + marginNoise));
-          item.composite = {
-            components: recipe.map(([key, share]) => ({ key, name: COMPONENTS[key].name, share: share / total })),
-            updatedWeek: Math.max(0, Math.min(WEEK_COUNT - 1, weekOfDay(updatedDay))),
-            updatedLabel: formatMonth(updatedDay),
-            ageMonths: AS_OF_MONTHS - (uy * 12 + um),
-            standardCost: 0,
-          };
-        }
+        });
         ITEMS.push(item);
-        sub.items.push(i);
+        sub.items.push(item.idx);
       });
     }
   }
 });
+
+/**
+ * Items added after the first build. They are appended so existing item indexes (and every seeded
+ * number keyed on them) stay the same. Weight is the item's share of its department's sales.
+ */
+/** Items from the original catalog; seeded event sampling stays on these so stories do not move. */
+export const BASE_ITEM_COUNT = ITEMS.length;
+
+const EXTRA_ITEMS: { dept: string; sub: string; raw: string; weight: number; launch?: number }[] = [
+  { dept: 'Produce', sub: 'Cooking vegetables', raw: 'Pie Pumpkins|4.99|p|zz1', weight: 0.036 },
+  { dept: 'Deli', sub: 'Pizza', raw: 'Pepperoni Stromboli|8.99||sb1.6', weight: 0.008 },
+  { dept: 'Deli', sub: 'Pizza', raw: 'Italian Stromboli|9.49', weight: 0.006 },
+  { dept: 'Deli', sub: 'Pizza', raw: '16 in. Pepperoni Pizza Slice|2.79', weight: 0.009 },
+  { dept: 'Deli', sub: 'Pizza', raw: '16 in. Cheese Pizza Slice|2.49', weight: 0.006 },
+  // FY2026 launches (new items watch).
+  { dept: 'Deli', sub: 'Hot meals', raw: 'Korean BBQ Chicken Bowl|9.99', weight: 0.006, launch: 31 },
+  { dept: 'Deli', sub: 'Subs & sandwiches', raw: 'Hot Honey Chicken Sandwich|7.99', weight: 0.007, launch: 34 },
+  { dept: 'Deli', sub: 'Hot meals', raw: 'Mediterranean Grain Bowl|8.99', weight: 0.004, launch: 38 },
+  { dept: 'Bakery', sub: 'Donuts', raw: 'Apple Cider Donuts 6 ct|5.49|p|fa1.5', weight: 0.012, launch: 35 },
+  { dept: 'Bakery', sub: 'Pastries & muffins', raw: 'Pumpkin Cream Cheese Muffins 4 ct|5.99|p|fa1.4', weight: 0.008, launch: 36 },
+  { dept: 'Produce', sub: 'Cut fruit', raw: 'Honeycrisp Apple Slices 10 oz|3.99', weight: 0.004, launch: 33 },
+  { dept: 'Seafood', sub: 'Platters & bowls', raw: 'Spicy Salmon Poke Bowl|12.99', weight: 0.01, launch: 30 },
+  { dept: 'Floral', sub: 'Potted plants', raw: 'Fall Succulent Planter|14.99|e|fa1.6', weight: 0.012, launch: 32 },
+];
+for (const x of EXTRA_ITEMS) {
+  const sub = SUBS.find((s) => s.name === x.sub && DEPTS[s.dept].name === x.dept);
+  if (!sub) throw new Error(`Unknown subcategory ${x.sub}`);
+  const subSpec = CATALOG[sub.dept].cats.find((c) => c.name === CATS[sub.cat].name)!.subs.find((s) => s.name === sub.name)!;
+  const item = buildItem(x.raw, { d: sub.dept, cat: CATS[sub.cat], sub, subSpec, weight: x.weight });
+  if (x.launch) {
+    item.launchWeek = globalWeek(2026, x.launch);
+    // New items run higher loss while ordering settles.
+    item.lossFactor *= 1.6;
+  }
+  ITEMS.push(item);
+  sub.items.push(item.idx);
+}
 
 export const ITEM_BY_NAME = new Map(ITEMS.map((it) => [it.name, it]));
 

@@ -14,7 +14,7 @@ export interface ViewProps {
   openDefinitions: (id?: string) => void;
 }
 
-export function useScope(opts: { onlyDepts?: number[]; deptOnly?: boolean } = {}) {
+export function useScope(opts: { onlyDepts?: number[]; deptOnly?: boolean; noItem?: boolean } = {}) {
   const { state, update } = useFilters();
   const timeKey = JSON.stringify(effectiveTime(state));
   const range = useMemo(() => resolveTime(JSON.parse(timeKey)), [timeKey]);
@@ -23,12 +23,22 @@ export function useScope(opts: { onlyDepts?: number[]; deptOnly?: boolean } = {}
   const scope = useMemo(
     () => buildScope(state, range, opts),
     // eslint-disable-next-line react-hooks/exhaustive-deps -- keyed on the fields the scope reads
-    [range, dept, cat, sub, item, region, districts, stores, idStores, flagged, rule, onlyKey, opts.deptOnly],
+    [range, dept, cat, sub, item, region, districts, stores, idStores, flagged, rule, onlyKey, opts.deptOnly, opts.noItem],
   );
   return { state, update, range, scope };
 }
 
-export function ViewToggles({ loss = false, flagged = false, children }: { loss?: boolean; flagged?: boolean; children?: React.ReactNode }) {
+export function ViewToggles({
+  loss = false,
+  flagged = false,
+  margin = false,
+  children,
+}: {
+  loss?: boolean;
+  flagged?: boolean;
+  margin?: boolean;
+  children?: React.ReactNode;
+}) {
   const { state, update } = useFilters();
   return (
     <div className="toggle-row">
@@ -60,14 +70,30 @@ export function ViewToggles({ loss = false, flagged = false, children }: { loss?
       {flagged && (
         <Segmented<'excl' | 'incl'>
           small
-          label="Flagged loss in totals"
+          label="Likely entry errors in loss totals"
           value={state.flagged}
           onChange={(v) => update((s) => ({ ...s, flagged: v }))}
           options={[
-            { value: 'excl', label: 'Excl. flagged' },
-            { value: 'incl', label: 'Incl. flagged' },
+            { value: 'excl', label: 'Excl. errors' },
+            { value: 'incl', label: 'Incl. errors' },
           ]}
         />
+      )}
+      {margin && (
+        <span className="toggle-group">
+          <span className="toggle-label">Margin on</span>
+          <Segmented<'gross' | 'net'>
+            small
+            label="Gross Margin Rate denominator"
+            value={state.marginBase}
+            onChange={(v) => update((s) => ({ ...s, marginBase: v }))}
+            options={[
+              { value: 'gross', label: 'Gross Sales' },
+              { value: 'net', label: 'Net Sales' },
+            ]}
+          />
+          {state.marginBase === 'net' && <StatusChip status="Proposed" />}
+        </span>
       )}
       {children}
     </div>
@@ -108,7 +134,7 @@ export function goToExtreme(update: ReturnType<typeof useFilters>['update']) {
   const it = itemByName(p.item);
   update((s: FilterState) => ({
     ...actions.item(it.idx)(s),
-    tab: 'shrink',
+    tab: 'loss',
     region: 0,
     districts: [],
     stores: [p.store],

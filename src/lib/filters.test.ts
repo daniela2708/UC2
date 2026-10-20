@@ -1,12 +1,14 @@
 import { describe, expect, it } from 'vitest';
 import { formatDay, globalWeek, weekStartDay } from '../data/calendar';
 import { ITEMS } from '../data/products';
-import { DEFAULT_STATE, fromQuery, resolveTime, sanitizeSearch, searchItems, storeIndices, tabDefaultTime, toQuery, BASE_TIME } from './filters';
+import { DEFAULT_STATE, fromQuery, resolveTime, sanitizeSearch, searchItems, storeIndices, toQuery, BASE_TIME } from './filters';
 import { buildScope, findFlags, itemAggregates, pluRows, shrinkAggregates, storeCatLoss } from './selectors';
+
+const W42_TIME = { ...BASE_TIME, mode: 'fiscal' as const, grain: 'week' as const, weekStart: weekStartDay(globalWeek(2026, 42)) };
 
 describe('time resolution', () => {
   it('defaults weekly views to the last complete week, W42', () => {
-    const r = resolveTime(tabDefaultTime('storeloss'));
+    const r = resolveTime(W42_TIME);
     expect(formatDay(r.start)).toBe('10/11/2026');
     expect(formatDay(r.end)).toBe('10/17/2026');
     expect(r.snapped).toBe(false);
@@ -34,7 +36,7 @@ describe('URL state', () => {
     const it0 = ITEMS.find((i) => i.name === 'Atlantic Salmon Fillet')!;
     const s = {
       ...DEFAULT_STATE,
-      tab: 'shrink' as const,
+      tab: 'loss' as const,
       time: { ...BASE_TIME, mode: 'fiscal' as const, grain: 'week' as const, weekStart: weekStartDay(globalWeek(2026, 38)) },
       dept: it0.dept,
       cat: it0.cat,

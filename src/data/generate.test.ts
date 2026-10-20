@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { globalWeek } from './calendar';
+import { globalWeek, weekStartDay } from './calendar';
 import { buildModel, getModel, NW } from './generate';
 import { PLANTED } from './planted';
 import { DEPTS, ITEMS } from './products';
@@ -11,6 +11,8 @@ import { shrimpStory } from '../views/common';
 
 const m = getModel();
 const dept = (name: string) => DEPTS.findIndex((d) => d.name === name);
+
+const W42_TIME = { ...BASE_TIME, mode: 'fiscal' as const, grain: 'week' as const, weekStart: weekStartDay(globalWeek(2026, 42)) };
 
 describe('masters', () => {
   it('has 200 stores in 3 regions and 12 districts, with unique codes', () => {
@@ -132,7 +134,7 @@ describe('planted stories', () => {
   });
 
   it('6: stores 213, 386 and 290 post no known loss for W42', () => {
-    const scope = buildScope({ ...DEFAULT_STATE, stores: [...PLANTED.incomplete.stores] }, resolveTime(tabDefaultTime('storeloss')));
+    const scope = buildScope({ ...DEFAULT_STATE, stores: [...PLANTED.incomplete.stores] }, resolveTime(W42_TIME));
     for (const row of storeCatLoss(scope).values()) for (const v of row) expect(v.loss).toBe(0);
   });
 });

@@ -1,6 +1,9 @@
-import { ArrowUpRight, SquareMinus, SquarePlus } from 'lucide-react';
-import { Fragment, useMemo, useState, type ReactNode } from 'react';
+import { ArrowUpRight, Columns3, SquareMinus, SquarePlus } from 'lucide-react';
+import { Fragment, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { useFilters } from '../lib/filterStore';
 import { ExportButton, nodeText } from './ExportButton';
+
+export type ColGroup = 'Sales' | 'Cost' | 'Margin' | 'Loss' | 'Sell-through' | 'YoY' | 'Budget' | 'Period';
 
 export interface HierCol {
   key: string;
@@ -8,6 +11,10 @@ export interface HierCol {
   title?: string;
   left?: boolean;
   sortable?: boolean;
+  /** Group in the column chooser. */
+  group?: ColGroup;
+  /** Proposed or secondary columns start hidden; the column chooser shows them. */
+  defaultHidden?: boolean;
 }
 
 export interface HierRow {
@@ -18,6 +25,8 @@ export interface HierRow {
   sort: Record<string, number | string | null>;
   children?: HierRow[];
   drill?: { label: string; onClick: () => void };
+  /** Extra row actions shown after the label (e.g. a simulator button). */
+  extra?: ReactNode;
   onSelect?: () => void;
   selected?: boolean;
   className?: string;
@@ -45,7 +54,10 @@ export function HierTable({
   empty = 'No data for the current filters.',
   exportTitle,
   maxHeight = 640,
+  tableId,
 }: {
+  /** Enables the column chooser; the choice is stored in the URL under this id. */
+  tableId?: string;
   /** Title of the downloaded sheet; when set, an Excel button exports every row (expanded or not). */
   exportTitle?: string;
   /** Rows scroll inside the card past this height; the header stays visible. */
@@ -58,6 +70,18 @@ export function HierTable({
   defaultExpanded?: string[];
   empty?: string;
 }) {
+  const { state, update } = useFilters();
+  const defaultVisible = columns.filter((c) => !c.defaultHidden).map((c) => c.key);
+  const chosen = tableId ? state.cols[tableId] : undefined;
+  const visibleKeys = new Set((chosen ?? defaultVisible).filter((k) => columns.some((c) => c.key === k)));
+  const shownCols = tableId ? columns.filter((c) => visibleKeys.has(c.key)) : columns;
+  const setVisible = (keys: string[] | null) =>
+    update((st) => {
+      const cols = { ...st.cols };
+      if (keys === null || (keys.length === defaultVisible.length && keys.every((k) => defaultVisible.includes(k)))) delete cols[tableId!];
+      else cols[tableId!] = keys;
+      return { ...st, cols };
+    });
   const [sort, setSort] = useState(defaultSort);
   const [expanded, setExpanded] = useState<Set<string>>(() => new Set(defaultExpanded));
 
@@ -117,6 +141,7 @@ export function HierTable({
                 <span>{r.label}</span>
                 {r.sub && <small>{r.sub}</small>}
               </span>
+              {r.extra}
               {r.drill && (
                 <button
                   type="button"
@@ -133,7 +158,7 @@ export function HierTable({
               )}
             </div>
           </td>
-          {columns.map((c) => (
+          {shownCols.map((c) => (
             <td key={c.key} className={c.left ? 'left' : undefined}>
               {r.cells[c.key]}
             </td>
@@ -159,9 +184,17 @@ export function HierTable({
 
   return (
     <>
-    {exportTitle && (
+    {(exportTitle || tableId) && (
       <div className="table-export">
-        <ExportButton getSheet={getSheet} fileName={exportTitle} label="Export to Excel" />
+        {tableId && (
+          <ColumnChooser
+            columns={columns}
+            visible={visibleKeys}
+            onChange={(keys) => setVisible(keys)}
+            onReset={() => setVisible(null)}
+          />
+        )}
+        {exportTitle && <ExportButton getSheet={getSheet} fileName={exportTitle} label="Export to Excel" />}
       </div>
     )}
     <div className="table-scroll" style={{ maxHeight }}>
@@ -176,7 +209,7 @@ export function HierTable({
                 </span>
               </button>
             </th>
-            {columns.map((c) => (
+            {shownCols.map((c) => (
               <th key={c.key} scope="col" className={c.left ? 'left' : undefined} aria-sort={c.sortable === false ? undefined : ariaSort(c.key)} title={c.title}>
                 {c.sortable === false ? (
                   c.label
@@ -196,7 +229,7 @@ export function HierTable({
           {total && renderRow(total, 0, true)}
           {sorted.length === 0 ? (
             <tr>
-              <td colSpan={columns.length + 1} className="empty">
+              <td colSpan={shownCols.length + 1} className="empty">
                 {empty}
               </td>
             </tr>
@@ -207,5 +240,71 @@ export function HierTable({
       </table>
     </div>
     </>
+  );
+}
+
+const GROUP_ORDER: ColGroup[] = ['Sales', 'Cost', 'Margin', 'Loss', 'Sell-through', 'YoY', 'Budget', 'Period'];
+
+/** Column chooser popover: checkboxes by group, plus Reset to default. */
+function ColumnChooser({
+  columns,
+  visible,
+  onChange,
+  onReset,
+}: {
+  columns: HierCol[];
+  visible: Set<string>;
+  onChange: (keys: string[]) => void;
+  onReset: () => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!open) return;
+    const onDoc = (e: MouseEvent) => ref.current && !ref.current.contains(e.target as Node) && setOpen(false);
+    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && setOpen(false);
+    document.addEventListener('mousedown', onDoc);
+    document.addEventListener('keydown', onKey);
+    return () => {
+      document.removeEventListener('mousedown', onDoc);
+      document.removeEventListener('keydown', onKey);
+    };
+  }, [open]);
+  const groups = GROUP_ORDER.map((g) => ({ g, cols: columns.filter((c) => (c.group ?? 'Sales') === g) })).filter((x) => x.cols.length);
+  const toggle = (key: string) => {
+    const next = columns.filter((c) => (c.key === key ? !visible.has(key) : visible.has(c.key))).map((c) => c.key);
+    onChange(next);
+  };
+  return (
+    <div className="popover-anchor" ref={ref}>
+      <button type="button" className="chart-view-btn" aria-haspopup="dialog" aria-expanded={open} onClick={() => setOpen((o) => !o)}>
+        <Columns3 size={14} aria-hidden="true" />
+        Columns
+      </button>
+      {open && (
+        <div className="popover col-chooser" role="dialog" aria-label="Choose columns">
+          <div className="popover-body">
+            {groups.map(({ g, cols }) => (
+              <fieldset key={g} className="col-group">
+                <legend>{g}</legend>
+                {cols.map((c) => (
+                  <label key={c.key} className="check-row">
+                    <input type="checkbox" checked={visible.has(c.key)} onChange={() => toggle(c.key)} />
+                    {c.label}
+                    {c.defaultHidden && <span className="chip status-proposed">Extra</span>}
+                  </label>
+                ))}
+              </fieldset>
+            ))}
+          </div>
+          <div className="popover-foot">
+            <span>{visible.size} of {columns.length} columns · Excel always exports all</span>
+            <button type="button" className="btn-link" onClick={onReset}>
+              Reset to default
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
   );
 }

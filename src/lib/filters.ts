@@ -25,7 +25,7 @@ import {
   yearSpan,
   type HolidayId,
 } from '../data/calendar';
-import { CATS, DEPTS, ITEMS, SUBS } from '../data/products';
+import { CATS, DEPTS, ITEMS, SUBS, type CostType } from '../data/products';
 import { DISTRICTS, isIdStore, STORE_BY_ID, STORES } from '../data/stores';
 import {
   clamp,
@@ -33,26 +33,33 @@ import {
   COST_ELEMENTS,
   DEFAULT_COST_BASIS,
   DEFAULT_LOSS_RULE,
+  DEFAULT_MARGIN_BASE,
+  DEFAULT_EXPECTED_LOSS,
+  clampExpectedLoss,
   type CostElement,
   type LossBasis,
   type LossRule,
+  type MarginBase,
 } from './kpis';
 
 // ---------------------------------------------------------------- Types
 
-export type TabId = 'items' | 'fresh' | 'shrink' | 'storeloss' | 'plu';
-export const TABS: { id: TabId; label: string }[] = [
-  { id: 'items', label: 'Category-Item Summary' },
-  { id: 'fresh', label: 'Fresh Report' },
-  { id: 'shrink', label: 'Shrink Review' },
-  { id: 'storeloss', label: 'Store Loss View' },
-  { id: 'plu', label: 'PLU Cost Watch' },
+export type TabId = 'items' | 'itemcost' | 'fresh' | 'loss' | 'cost';
+/** The three workbook views come first; the rest are proposed additional views. */
+export const TABS: { id: TabId; label: string; required: boolean }[] = [
+  { id: 'items', label: 'Category-Item Summary', required: true },
+  { id: 'itemcost', label: 'Item Cost Over Time', required: true },
+  { id: 'fresh', label: 'Fresh Report', required: true },
+  { id: 'loss', label: 'Loss Review', required: false },
+  { id: 'cost', label: 'Cost Watch', required: false },
 ];
+/** Tab ids from earlier builds, so shared links keep working. */
+const TAB_ALIASES: Record<string, TabId> = { shrink: 'loss', storeloss: 'loss', plu: 'cost' };
 
 export type TimeMode = 'todate' | 'rolling' | 'fiscal' | 'custom';
 export type ToDateOpt = 'day' | 'wtd' | 'ptd' | 'qtd' | 'ytd';
 export type RollingOpt = 6 | 13 | 26 | 52;
-export type FiscalGrain = 'year' | 'quarter' | 'period' | 'week' | 'holiday';
+export type FiscalGrain = 'year' | 'quarter' | 'period' | 'week' | 'day' | 'holiday';
 
 export interface TimeSel {
   mode: TimeMode;
@@ -65,9 +72,14 @@ export interface TimeSel {
   /** Day index of the Sunday that starts the chosen week. */
   weekStart: number;
   holiday: HolidayId;
+  /** Day index chosen with the Day filter. */
+  day: number;
   from: number;
   to: number;
 }
+
+export type CostTypeFilter = 'all' | CostType;
+export type CostSource = 'po' | 'hq';
 
 export interface FilterState {
   tab: TabId;
@@ -86,6 +98,19 @@ export interface FilterState {
   flagged: 'excl' | 'incl';
   costBasis: CostElement[];
   rule: LossRule;
+  /** Gross Margin Rate denominator: Gross Sales (workbook) or Net Sales (proposed). */
+  marginBase: MarginBase;
+  costType: CostTypeFilter;
+  /** PO (real-time) or HQ cost for PLU and random-weight items; UPC always uses HQ average cost. */
+  costSource: CostSource;
+  /** Item shown in Item Cost Over Time (-1 = default: largest cost change). */
+  icItem: number;
+  /** Visible columns per table, only when changed from the table's default. */
+  cols: Record<string, string[]>;
+  /** Margin After Loss: subtract actual known loss or the expected rate. */
+  lossRateBasis: 'actual' | 'expected';
+  /** Expected loss rates by department name (Proposed defaults, editable 0–30 %). */
+  expLoss: Record<string, number>;
 }
 
 export const TO_DATE_LABEL: Record<ToDateOpt, string> = {
@@ -101,6 +126,7 @@ export const GRAIN_LABEL: Record<FiscalGrain, string> = {
   quarter: 'Quarter',
   period: 'Period',
   week: 'Week beginning',
+  day: 'Day',
   holiday: 'Holiday period',
 };
 
@@ -116,6 +142,7 @@ export const BASE_TIME: TimeSel = {
   period: fiscalOfWeek(LAST_COMPLETE_WEEK).period,
   weekStart: weekStartDay(LAST_COMPLETE_WEEK),
   holiday: 'july4',
+  day: AS_OF_DAY - 1,
   from: weekStartDay(LAST_COMPLETE_WEEK),
   to: AS_OF_DAY,
 };
@@ -124,8 +151,8 @@ export function tabDefaultTime(tab: TabId): TimeSel {
   switch (tab) {
     case 'fresh':
       return { ...BASE_TIME, mode: 'todate', toDate: 'ptd' };
-    case 'storeloss':
-      return { ...BASE_TIME, mode: 'fiscal', grain: 'week', weekStart: weekStartDay(LAST_COMPLETE_WEEK) };
+    case 'itemcost':
+      return { ...BASE_TIME, mode: 'rolling', rolling: 26 };
     default:
       return { ...BASE_TIME };
   }
@@ -146,13 +173,30 @@ export const DEFAULT_STATE: FilterState = {
   flagged: 'excl',
   costBasis: [...DEFAULT_COST_BASIS],
   rule: { ...DEFAULT_LOSS_RULE },
+  marginBase: DEFAULT_MARGIN_BASE,
+  costType: 'all',
+  costSource: 'po',
+  icItem: -1,
+  cols: {},
+  lossRateBasis: 'actual',
+  expLoss: { ...DEFAULT_EXPECTED_LOSS },
 };
 
 /** Which filters a tab does not use, and why. */
-export function unusedFilters(tab: TabId): { time?: string; product?: string } {
-  if (tab === 'fresh')
-    return { product: 'The Fresh Report is calculated by department from purchases, so category, subcategory and item do not apply.' };
-  if (tab === 'plu') return { time: 'Cost age is measured as of 10/18/2026 and margin impact is FY2026 year to date.' };
+/** Which filters a view does not use, and why (they are greyed out with this tooltip). */
+export function unusedFilters(tab: TabId): { time?: string; product?: string; sku?: string; stores?: string } {
+  if (tab === 'fresh') return { sku: 'The Fresh Report works by department, category and subcategory; the workbook does not list SKU for this view.' };
+  if (tab === 'itemcost')
+    return {
+      stores: 'Purchase orders are placed for the chain, so Region, District and Store do not apply. Business filters only narrow the SKU list.',
+      sku: 'Pick the item with the SKU / PLU picker at the top of the view.',
+    };
+  if (tab === 'cost')
+    return {
+      time: 'Cost Watch compares the cost in HQ with the last 4 weeks of purchase orders, as of 10/18/2026.',
+      stores: 'Purchase orders and HQ costs are chain level.',
+      sku: 'Cost Watch ranks every item; click a row to open it in Item Cost Over Time.',
+    };
   return {};
 }
 
@@ -227,6 +271,9 @@ export function resolveTime(t: TimeSel): ResolvedRange {
         const sp = periodSpan(fy, p);
         [start, end] = spanDays(sp.startWeek, sp.endWeek);
         name = `P${p} FY${fy}`;
+      } else if (t.grain === 'day') {
+        start = end = clampDay(t.day);
+        name = formatDay(start);
       } else if (t.grain === 'week') {
         const ws = snapToSunday(clampDay(t.weekStart));
         start = ws;
@@ -304,13 +351,14 @@ export function subcategoriesOf(cat: number) {
   return cat < 0 ? [] : SUBS.filter((s) => s.cat === cat);
 }
 
-export function itemIndices(s: Pick<FilterState, 'dept' | 'cat' | 'sub' | 'item'>, onlyDepts?: number[]): number[] {
+export function itemIndices(s: Pick<FilterState, 'dept' | 'cat' | 'sub' | 'item'> & { costType?: CostTypeFilter }, onlyDepts?: number[]): number[] {
   const out: number[] = [];
   for (const it of ITEMS) {
     if (s.item >= 0 && it.idx !== s.item) continue;
     if (s.sub >= 0 && it.sub !== s.sub) continue;
     if (s.cat >= 0 && it.cat !== s.cat) continue;
     if (s.dept >= 0 && it.dept !== s.dept) continue;
+    if (s.costType && s.costType !== 'all' && it.costType !== s.costType) continue;
     if (onlyDepts && !onlyDepts.includes(it.dept)) continue;
     out.push(it.idx);
   }
@@ -401,10 +449,10 @@ export function searchItems(raw: string, limit = 8): number[] {
 
 // ---------------------------------------------------------------- URL sync
 
-const TAB_IDS = TABS.map((t) => t.id);
+const TAB_IDS = [...TABS.map((t) => t.id), ...Object.keys(TAB_ALIASES)];
 const MODES: TimeMode[] = ['todate', 'rolling', 'fiscal', 'custom'];
 const TO_DATES: ToDateOpt[] = ['day', 'wtd', 'ptd', 'qtd', 'ytd'];
-const GRAINS: FiscalGrain[] = ['year', 'quarter', 'period', 'week', 'holiday'];
+const GRAINS: FiscalGrain[] = ['year', 'quarter', 'period', 'week', 'day', 'holiday'];
 const HOLIDAY_IDS = HOLIDAYS.map((h) => h.id);
 
 function oneOf<T extends string | number>(v: string | null, allowed: readonly T[]): T | undefined {
@@ -436,6 +484,7 @@ export function toQuery(s: FilterState): string {
       if (t.grain === 'quarter') p.set('q', String(t.quarter));
       if (t.grain === 'period') p.set('p', String(t.period));
       if (t.grain === 'week') p.set('wk', isoFromDay(t.weekStart));
+      if (t.grain === 'day') p.set('dy', isoFromDay(t.day));
       if (t.grain === 'holiday') p.set('hol', t.holiday);
     }
     if (t.mode === 'custom') {
@@ -457,6 +506,20 @@ export function toQuery(s: FilterState): string {
   if (cb !== [...DEFAULT_COST_BASIS].sort().join(',')) p.set('cb', cb || 'none');
   if (s.rule.dollars !== DEFAULT_LOSS_RULE.dollars) p.set('rd', String(s.rule.dollars));
   if (s.rule.pct !== DEFAULT_LOSS_RULE.pct) p.set('rp', String(Math.round(s.rule.pct * 100)));
+  if (s.marginBase !== DEFAULT_MARGIN_BASE) p.set('mb', s.marginBase);
+  if (s.costType !== 'all') p.set('ct', s.costType);
+  if (s.costSource !== 'po') p.set('cs', s.costSource);
+  if (s.icItem >= 0) p.set('ic', ITEMS[s.icItem].code);
+  const cols = Object.entries(s.cols)
+    .map(([t, keys]) => `${t}:${keys.join('.')}`)
+    .join(';');
+  if (cols) p.set('cols', cols);
+  if (s.lossRateBasis !== 'actual') p.set('lr', s.lossRateBasis);
+  const el = Object.entries(s.expLoss)
+    .filter(([d, v]) => DEFAULT_EXPECTED_LOSS[d] !== v)
+    .map(([d, v]) => `${d}:${Math.round(v * 1000) / 10}`)
+    .join(';');
+  if (el) p.set('el', el);
   return p.toString();
 }
 
@@ -464,7 +527,8 @@ export function toQuery(s: FilterState): string {
 export function fromQuery(query: string): FilterState {
   const p = new URLSearchParams(query.length > 2000 ? '' : query);
   const s: FilterState = structuredClone(DEFAULT_STATE);
-  s.tab = oneOf(p.get('tab'), TAB_IDS) ?? s.tab;
+  const tabRaw = oneOf(p.get('tab'), TAB_IDS);
+  s.tab = tabRaw ? (TAB_ALIASES[tabRaw] ?? (tabRaw as TabId)) : s.tab;
   const mode = oneOf(p.get('tm'), MODES);
   if (mode) {
     const t: TimeSel = { ...tabDefaultTime(s.tab), mode };
@@ -478,6 +542,7 @@ export function fromQuery(query: string): FilterState {
     t.period = intIn(p.get('p'), 1, 12) ?? t.period;
     const wk = dayParam(p.get('wk'));
     if (wk !== undefined) t.weekStart = snapToSunday(wk);
+    t.day = dayParam(p.get('dy')) ?? t.day;
     t.holiday = oneOf(p.get('hol'), HOLIDAY_IDS) ?? t.holiday;
     t.from = dayParam(p.get('from')) ?? t.from;
     t.to = dayParam(p.get('to')) ?? t.to;
@@ -515,6 +580,32 @@ export function fromQuery(query: string): FilterState {
   }
   const rd = p.get('rd');
   const rp = p.get('rp');
+  s.marginBase = p.get('mb') === 'net' ? 'net' : DEFAULT_MARGIN_BASE;
+  s.costType = oneOf(p.get('ct'), ['UPC', 'PLU', 'RW'] as const) ?? 'all';
+  s.costSource = p.get('cs') === 'hq' ? 'hq' : 'po';
+  const ic = p.get('ic');
+  if (ic && /^\d{4,12}$/.test(ic)) s.icItem = ITEMS.find((x) => x.code === ic)?.idx ?? -1;
+  // Column choices: "table:key.key;table:key", tokens limited to letters and digits.
+  const colsRaw = p.get('cols');
+  if (colsRaw && colsRaw.length <= 1000) {
+    for (const part of colsRaw.split(';').slice(0, 10)) {
+      const [t, keys] = part.split(':');
+      if (!t || !/^[a-z]{1,12}$/.test(t) || keys === undefined) continue;
+      s.cols[t] = keys
+        .split('.')
+        .filter((k) => /^[A-Za-z0-9]{1,16}$/.test(k))
+        .slice(0, 60);
+    }
+  }
+  s.lossRateBasis = p.get('lr') === 'expected' ? 'expected' : 'actual';
+  const elRaw = p.get('el');
+  if (elRaw && elRaw.length <= 300)
+    for (const part of elRaw.split(';')) {
+      const [d, v] = part.split(':');
+      if (!(d in DEFAULT_EXPECTED_LOSS) || !v || !/^\d{1,3}(\.\d)?$/.test(v)) continue;
+      const r = clampExpectedLoss(Number(v) / 100);
+      if (r !== null) s.expLoss[d] = r;
+    }
   s.rule = clampLossRule({
     dollars: rd !== null && /^\d{1,7}$/.test(rd) ? Number(rd) : DEFAULT_LOSS_RULE.dollars,
     pct: rp !== null && /^\d{1,5}$/.test(rp) ? Number(rp) / 100 : DEFAULT_LOSS_RULE.pct,

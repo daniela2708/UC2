@@ -244,7 +244,7 @@ export interface Series {
   width?: number;
 }
 
-/** 8 % of the data range as head- and footroom, so no line touches or leaves the plot. */
+/** 10 % of the data range as head- and footroom, so no line touches or leaves the plot. */
 function padOf(_edge: number, data: Record<string, number | string | null>[], series: Series[]): number {
   let lo = Infinity;
   let hi = -Infinity;
@@ -256,7 +256,7 @@ function padOf(_edge: number, data: Record<string, number | string | null>[], se
         hi = Math.max(hi, v);
       }
     }
-  return Number.isFinite(lo) ? Math.max((hi - lo) * 0.08, Math.abs(hi) * 0.002, 1e-6) : 0;
+  return Number.isFinite(lo) ? Math.max((hi - lo) * 0.1, Math.abs(hi) * 0.002, 1e-6) : 0;
 }
 
 export function TrendLines({
@@ -630,3 +630,80 @@ export function ItemMap({
 }
 
 export const ChartGrid = ({ children, cols = 2 }: { children: ReactNode; cols?: 2 | 3 }) => <div className={`chart-grid cols-${cols}`}>{children}</div>;
+
+// ---------------------------------------------------------------- Cost over time: two stacked panels, one time axis
+
+export interface CostQtyPoint {
+  x: string;
+  cost: number | null;
+  retail: number | null;
+  qty: number;
+  cases: number;
+}
+
+/**
+ * Real-time cost (line, with the HQ cost as a dashed reference and optional retail) above quantity
+ * purchased (bars). Two panels instead of a dual axis; `syncId` keeps the crosshair and tooltip in step.
+ */
+export function CostQtyPanels({
+  data,
+  hq,
+  showRetail,
+  fmtCost,
+  fmtQty,
+  qtyLabel,
+  width,
+  height,
+}: {
+  data: CostQtyPoint[];
+  hq: number;
+  showRetail: boolean;
+  fmtCost: (v: number) => string;
+  fmtQty: (v: number) => string;
+  qtyLabel: string;
+  width?: number;
+  height?: number;
+}) {
+  const h = height ?? 380;
+  const topH = Math.round(h * 0.62);
+  const botH = h - topH;
+  const costs = data.flatMap((d) => [d.cost, showRetail ? d.retail : null]).filter((v): v is number => typeof v === 'number');
+  const lo = Math.min(hq, ...costs);
+  const hi = Math.max(hq, ...costs);
+  const pad = Math.max((hi - lo) * 0.1, hi * 0.02, 0.01);
+  const tip = ({ active, payload, label }: { active?: boolean; payload?: { payload?: unknown }[]; label?: string | number }) => {
+    if (!active || !payload?.length) return null;
+    const p = payload[0].payload as CostQtyPoint;
+    const rows: TipRow[] = [
+      { label: 'PO cost / unit', value: p.cost === null ? 'No orders' : fmtCost(p.cost), color: C.s1 },
+      { label: 'Current PO Cost (HQ)', value: fmtCost(hq), color: C.axis },
+    ];
+    if (showRetail && p.retail !== null) rows.push({ label: 'Retail', value: fmtCost(p.retail), color: C.s3 });
+    rows.push({ label: qtyLabel, value: `${fmtQty(p.qty)}${p.cases ? ` · ${p.cases.toLocaleString('en-US')} cases` : ''}`, color: C.s2 });
+    return <TipBox title={String(label)} rows={rows} />;
+  };
+  return (
+    <div style={{ width, height: h }}>
+      <LineChart width={width} height={topH} data={data} syncId="itemcost" margin={{ top: 10, right: 76, bottom: 0, left: 4 }}>
+        <XAxis dataKey="x" hide />
+        <YAxis {...axisProps} width={60} tickFormatter={fmtCost} domain={[lo - pad, hi + pad]} allowDataOverflow />
+        <ReferenceLine
+          y={hq}
+          stroke={C.axis}
+          strokeDasharray="5 4"
+          strokeWidth={1.5}
+          label={{ value: `HQ ${fmtCost(hq)}`, position: 'right', fill: C.axis, fontSize: 11 }}
+        />
+        <Tooltip content={tip} cursor={{ stroke: C.axis, strokeWidth: 1 }} />
+        <Line type="stepAfter" dataKey="cost" stroke={C.s1} strokeWidth={2} dot={false} connectNulls isAnimationActive={false} activeDot={{ r: 4.5, stroke: '#fff', strokeWidth: 2 }} />
+        {showRetail && <Line type="stepAfter" dataKey="retail" stroke={C.s3} strokeWidth={2} dot={false} connectNulls isAnimationActive={false} />}
+      </LineChart>
+      <BarChart width={width} height={botH} data={data} syncId="itemcost" margin={{ top: 6, right: 76, bottom: 0, left: 4 }} barCategoryGap="20%">
+        <XAxis dataKey="x" {...axisProps} interval="preserveStartEnd" minTickGap={28} />
+        <YAxis {...axisProps} width={60} tickFormatter={fmtQty} />
+        <Tooltip content={tip} cursor={{ fill: 'rgba(33,30,30,0.05)' }} />
+        <Bar dataKey="qty" fill={C.s2} radius={[3, 3, 0, 0]} maxBarSize={14} isAnimationActive={false} />
+      </BarChart>
+    </div>
+  );
+}

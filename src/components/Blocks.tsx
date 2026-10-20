@@ -1,5 +1,5 @@
 import { AlertTriangle, Info } from 'lucide-react';
-import { Children, useState, type ReactNode } from 'react';
+import { Children, Fragment, useState, type ReactNode } from 'react';
 import { AS_OF_DAY, fiscalOfDay, formatDay } from '../data/calendar';
 import { TABS, type TabId } from '../lib/filters';
 import { InfoTip } from './ui';
@@ -158,9 +158,14 @@ export function BottomBar({ tab, onTab }: { tab: TabId; onTab: (t: TabId) => voi
   return (
     <div className="bottom-bar">
       <nav className="tabs" role="tablist" aria-label="Report pages" onKeyDown={onKey}>
-        {TABS.map((t) => (
+        {TABS.map((t, n) => (
+          <Fragment key={t.id}>
+          {!t.required && TABS[n - 1]?.required && (
+            <span className="tab-divider" role="presentation">
+              Additional views (proposed)
+            </span>
+          )}
           <button
-            key={t.id}
             id={`tab-${t.id}`}
             type="button"
             role="tab"
@@ -171,6 +176,7 @@ export function BottomBar({ tab, onTab }: { tab: TabId; onTab: (t: TabId) => voi
           >
             {t.label}
           </button>
+          </Fragment>
         ))}
       </nav>
       <footer className="app-footer">

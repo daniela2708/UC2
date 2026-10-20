@@ -1,14 +1,15 @@
 import { Component, useCallback, useState, type ErrorInfo, type ReactNode } from 'react';
 import { BottomBar } from './components/Blocks';
 import { DefinitionsDrawer } from './components/DefinitionsDrawer';
+import { SimulatorProvider } from './components/Simulator';
 import { FilterCard } from './components/FilterCard';
 import { Disclaimer, Header } from './components/Header';
 import { actions, FilterProvider, useFilters } from './lib/filterStore';
 import { CategoryItemView } from './views/CategoryItemView';
 import { FreshReportView } from './views/FreshReportView';
-import { PluCostWatchView } from './views/PluCostWatchView';
-import { ShrinkReviewView } from './views/ShrinkReviewView';
-import { StoreLossView } from './views/StoreLossView';
+import { CostWatchView } from './views/CostWatchView';
+import { ItemCostView } from './views/ItemCostView';
+import { LossReviewView } from './views/LossReviewView';
 
 /** Shows a generic message to users; details go to the console only. */
 class ErrorBoundary extends Component<{ children: ReactNode; resetKey: string }, { failed: boolean; key: string }> {
@@ -44,12 +45,12 @@ function Shell() {
     switch (state.tab) {
       case 'fresh':
         return <FreshReportView openDefinitions={openDefinitions} />;
-      case 'shrink':
-        return <ShrinkReviewView openDefinitions={openDefinitions} />;
-      case 'storeloss':
-        return <StoreLossView openDefinitions={openDefinitions} />;
-      case 'plu':
-        return <PluCostWatchView openDefinitions={openDefinitions} />;
+      case 'itemcost':
+        return <ItemCostView openDefinitions={openDefinitions} />;
+      case 'loss':
+        return <LossReviewView openDefinitions={openDefinitions} />;
+      case 'cost':
+        return <CostWatchView openDefinitions={openDefinitions} />;
       default:
         return <CategoryItemView openDefinitions={openDefinitions} />;
     }
@@ -80,7 +81,9 @@ function Shell() {
 export default function App() {
   return (
     <FilterProvider>
-      <Shell />
+      <SimulatorProvider>
+        <Shell />
+      </SimulatorProvider>
     </FilterProvider>
   );
 }

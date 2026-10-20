@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { KPI_DEFINITIONS } from '../lib/definitions';
+import { KPI_DEFINITIONS, OPEN_QUESTIONS } from '../lib/definitions';
 import { sanitizeSearch, SEARCH_MAX } from '../lib/filters';
 
 /** KPI definitions modal, in the UC1 format: one table with definition, calculation, source and status. */
@@ -37,8 +37,7 @@ export function DefinitionsDrawer({ open, focusId, onClose }: { open: boolean; f
           <h2 id="defs-title">KPI definitions</h2>
           <div className="defs-intro">
             <p>
-              Prototype definitions for validation with Weis. They are not official definitions; cost basis, loss valuation and the flag rule are still
-              open. All figures are simulated.
+              Prototype definitions for validation with Weis. They are not official definitions; the three required views are Category-Item Summary, Item Cost Over Time and Fresh Report; open questions are listed at the end. All figures are simulated.
             </p>
             <input
               className="text-input defs-search"
@@ -59,6 +58,7 @@ export function DefinitionsDrawer({ open, focusId, onClose }: { open: boolean; f
                 <th>Business definition</th>
                 <th>Calculation</th>
                 <th>Data source</th>
+                <th>Views</th>
                 <th>Validation status</th>
               </tr>
             </thead>
@@ -77,18 +77,32 @@ export function DefinitionsDrawer({ open, focusId, onClose }: { open: boolean; f
                     {d.source}
                     <span className="defs-recon">Reconciles to: {d.reconciliation}</span>
                   </td>
-                  <td>{d.status}</td>
+                  <td className="defs-views">{d.views.join(' · ')}</td>
+                  <td>
+                    {d.status}
+                    {d.priority && <span className="defs-recon">{d.priority}</span>}
+                  </td>
                 </tr>
               ))}
               {list.length === 0 && (
                 <tr>
-                  <td colSpan={5} className="empty">
+                  <td colSpan={6} className="empty">
                     No KPI matches “{query}”.
                   </td>
                 </tr>
               )}
             </tbody>
           </table>
+          <h3 className="defs-q-title">Open questions from the workbook</h3>
+          <ul className="defs-questions">
+            {OPEN_QUESTIONS.map((q) => (
+              <li key={q.id}>
+                <span className="chip amber">Open question</span>
+                <b>{q.question}</b>
+                <span className="defs-recon">{q.context}</span>
+              </li>
+            ))}
+          </ul>
         </div>
         <div className="defs-foot">
           <button ref={closeRef} type="button" className="defs-close" onClick={onClose}>
