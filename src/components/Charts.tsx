@@ -1,0 +1,613 @@
+/* eslint-disable react-refresh/only-export-components -- chart palette constants live with the charts */
+import { BarChart3, Table2 } from 'lucide-react';
+import { ExportButton, nodeText } from './ExportButton';
+import { cloneElement, isValidElement, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
+import {
+  Bar,
+  BarChart,
+  Cell,
+  ComposedChart,
+  Customized,
+  LabelList,
+  Line,
+  LineChart,
+  ReferenceLine,
+  Scatter,
+  ScatterChart,
+  Tooltip,
+  XAxis,
+  YAxis,
+  ZAxis,
+} from 'recharts';
+
+/**
+ * Chart palette. Categorical slots validated with the dataviz validator (light surface):
+ * blue → orange → aqua passes CVD and normal-vision separation; aqua needs labels or the table view.
+ * Last year and budgets-as-context use the neutral de-emphasis gray. Variances use the pos/neg tokens
+ * and always carry ▲ / ▼ text.
+ */
+export const C = {
+  s1: '#2a78d6',
+  s2: '#eb6834',
+  s3: '#1baf7a',
+  s4: '#eda100',
+  ly: '#a2a19c',
+  grid: '#ecebe5',
+  axis: '#797873',
+  pos: '#2e7d4f',
+  neg: '#c62828',
+  soft: '#cde2fb',
+};
+
+export interface LegendItem {
+  label: string;
+  color: string;
+  kind?: 'line' | 'rect' | 'dot';
+}
+
+export interface ChartTable {
+  head: string[];
+  rows: (string | number)[][];
+}
+
+export function ChartCard({
+  title,
+  subtitle,
+  legend,
+  table,
+  children,
+  height = 240,
+  contentHeight,
+  className,
+}: {
+  /** Full height of the chart when it is taller than `height`; the body then scrolls. */
+  contentHeight?: number;
+  title: string;
+  subtitle?: ReactNode;
+  legend?: LegendItem[];
+  table?: ChartTable;
+  children: ReactNode;
+  height?: number;
+  className?: string;
+}) {
+  const [asTable, setAsTable] = useState(false);
+  return (
+    <section className={`card chart-card${className ? ` ${className}` : ''}`} aria-label={title}>
+      <header className="chart-head">
+        <div>
+          <h3 className="chart-title">{title}</h3>
+          {subtitle && <p className="chart-sub">{subtitle}</p>}
+        </div>
+        {table && (
+          <span className="chart-actions">
+          <ExportButton
+            fileName={title}
+            getSheet={() => ({ title, subtitle: nodeText(subtitle), head: table.head, rows: table.rows.map((r) => r.map((c) => c)) })}
+          />
+          <button
+            type="button"
+            className="chart-view-btn"
+            aria-pressed={asTable}
+            onClick={() => setAsTable((v) => !v)}
+            title={asTable ? 'Show chart' : 'Show as table'}
+          >
+            {asTable ? <BarChart3 size={14} aria-hidden="true" /> : <Table2 size={14} aria-hidden="true" />}
+            {asTable ? 'Chart' : 'Table'}
+          </button>
+          </span>
+        )}
+      </header>
+      {legend && legend.length > 1 && !asTable && (
+        <ul className="chart-legend">
+          {legend.map((l) => (
+            <li key={l.label}>
+              <span className={`key key-${l.kind ?? 'line'}`} style={{ background: l.color }} aria-hidden="true" />
+              {l.label}
+            </li>
+          ))}
+        </ul>
+      )}
+      {asTable && table ? (
+        <div className="chart-table-wrap" style={{ maxHeight: height + 24 }}>
+          <table className="mini-table">
+            <thead>
+              <tr>
+                {table.head.map((h, i) => (
+                  <th key={h} className={i === 0 ? 'left' : undefined}>
+                    {h}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {table.rows.map((r, i) => (
+                <tr key={i}>
+                  {r.map((c, j) => (
+                    <td key={j} className={j === 0 ? 'left' : undefined}>
+                      {c}
+                    </td>
+                  ))}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      ) : (
+        <Sized height={height} contentHeight={contentHeight}>
+          {children}
+        </Sized>
+      )}
+    </section>
+  );
+}
+
+/** Measures its width (on mount and on resize) and hands it to the chart, so charts never render at 0 × 0. */
+function Sized({ height, contentHeight, children }: { height: number; contentHeight?: number; children: ReactNode }) {
+  const scroll = !!contentHeight && contentHeight > height;
+  const ref = useRef<HTMLDivElement>(null);
+  const [width, setWidth] = useState(0);
+  useLayoutEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const measure = () => setWidth(Math.floor(el.clientWidth));
+    measure();
+    const ro = new ResizeObserver(measure);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+  return (
+    <div
+      className={`chart-body${scroll ? ' is-scroll' : ''}`}
+      ref={ref}
+      // A scrolling chart does not set the row height: it fills whatever its neighbour in the grid needs.
+      style={scroll ? undefined : { height: contentHeight ? Math.min(height, contentHeight) : height }}
+      tabIndex={scroll ? 0 : undefined}
+    >
+      {width > 0 && isValidElement(children)
+        ? cloneElement(children as React.ReactElement<{ width: number; height: number }>, { width, height: contentHeight ?? height })
+        : null}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------- Tooltip
+
+export interface TipRow {
+  label: string;
+  value: string;
+  color?: string;
+}
+
+export function TipBox({ title, rows }: { title: string; rows: TipRow[] }) {
+  return (
+    <div className="chart-tip">
+      <div className="chart-tip-title">{title}</div>
+      {rows.map((r) => (
+        <div className="chart-tip-row" key={r.label}>
+          {r.color && <span className="tip-key" style={{ background: r.color }} />}
+          <b>{r.value}</b>
+          <span>{r.label}</span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+const axisProps = {
+  tick: { fill: C.axis, fontSize: 11 },
+  axisLine: false,
+  tickLine: false,
+} as const;
+
+// ---------------------------------------------------------------- Trend (lines over weeks)
+
+interface EndLabelProps {
+  formattedGraphicalItems?: { item?: { props?: { stroke?: string } }; props?: { stroke?: string; points?: { x: number; y: number | null; value?: unknown }[] } }[];
+  format: (v: number) => string;
+}
+
+/** Value at the end of every line. Labels that would overlap are spread apart and tied back with a short leader. */
+function EndLabels({ formattedGraphicalItems, format }: EndLabelProps) {
+  const GAP = 15;
+  const ends = (formattedGraphicalItems ?? [])
+    .map((g) => {
+      const pts = g.props?.points ?? [];
+      for (let i = pts.length - 1; i >= 0; i--) {
+        const p = pts[i];
+        const v = Array.isArray(p.value) ? p.value[1] : p.value;
+        if (p.y !== null && typeof p.y === 'number' && typeof v === 'number') return { x: p.x, y: p.y, v, color: g.item?.props?.stroke ?? g.props?.stroke ?? C.axis, ly: p.y };
+      }
+      return null;
+    })
+    .filter((e): e is { x: number; y: number; v: number; color: string; ly: number } => e !== null)
+    .sort((a, b) => a.y - b.y);
+  for (let i = 1; i < ends.length; i++) if (ends[i].ly - ends[i - 1].ly < GAP) ends[i].ly = ends[i - 1].ly + GAP;
+  return (
+    <g>
+      {ends.map((e, i) => (
+        <g key={i}>
+          {Math.abs(e.ly - e.y) > 1 && <line x1={e.x + 3} y1={e.y} x2={e.x + 10} y2={e.ly} stroke={e.color} strokeWidth={1} />}
+          <circle cx={e.x + 14} cy={e.ly} r={3} fill={e.color} />
+          <text x={e.x + 20} y={e.ly + 4} fontSize={12} fontWeight={800} fill="#211e1e">
+            {format(e.v)}
+          </text>
+        </g>
+      ))}
+    </g>
+  );
+}
+
+export interface Series {
+  key: string;
+  label: string;
+  color: string;
+  width?: number;
+}
+
+export function TrendLines({
+  width,
+  height,
+  data,
+  series,
+  format,
+  tickFormat,
+  reference,
+}: {
+  width?: number;
+  height?: number;
+  data: Record<string, number | string | null>[];
+  series: Series[];
+  format: (v: number) => string;
+  tickFormat?: (v: number) => string;
+  reference?: { y: number; label: string };
+}) {
+  return (
+    <LineChart width={width} height={height} data={data} margin={{ top: 10, right: 70, bottom: 0, left: 4 }}>
+      <XAxis dataKey="x" {...axisProps} interval="preserveStartEnd" minTickGap={24} />
+      <YAxis {...axisProps} width={52} tickFormatter={tickFormat ?? format} domain={['auto', 'auto']} />
+      {reference && <ReferenceLine y={reference.y} stroke={C.axis} strokeWidth={1} label={{ value: reference.label, position: 'insideTopLeft', fill: C.axis, fontSize: 11 }} />}
+      <Tooltip
+        cursor={{ stroke: C.axis, strokeWidth: 1 }}
+        content={({ active, payload, label }) =>
+          active && payload?.length ? (
+            <TipBox
+              title={String(label)}
+              rows={series
+                .map((s): TipRow | null => {
+                  const p = payload.find((x) => x.dataKey === s.key);
+                  return p && typeof p.value === 'number' ? { label: s.label, value: format(p.value), color: s.color } : null;
+                })
+                .filter((r): r is TipRow => r !== null)}
+            />
+          ) : null
+        }
+      />
+      {series.map((s) => (
+        <Line
+          key={s.key}
+          type="monotone"
+          dataKey={s.key}
+          stroke={s.color}
+          strokeWidth={s.width ?? 2}
+          dot={false}
+          activeDot={{ r: 4.5, stroke: '#fff', strokeWidth: 2 }}
+          connectNulls
+          isAnimationActive={false}
+        />
+      ))}
+      <Customized component={(props: unknown) => <EndLabels {...(props as EndLabelProps)} format={format} />} />
+    </LineChart>
+  );
+}
+
+// ---------------------------------------------------------------- Columns with a last-year line
+
+export function ColumnsVsLy({
+  width,
+  height,
+  data,
+  format,
+  tickFormat,
+  avg,
+}: {
+  width?: number;
+  height?: number;
+  data: { x: string; value: number; ly: number | null; note?: string }[];
+  format: (v: number) => string;
+  tickFormat: (v: number) => string;
+  avg?: number;
+}) {
+  return (
+    <ComposedChart width={width} height={height} data={data} margin={{ top: 8, right: 8, bottom: 0, left: 4 }} barCategoryGap="22%">
+      <XAxis dataKey="x" {...axisProps} interval="preserveStartEnd" minTickGap={24} />
+      <YAxis {...axisProps} width={52} tickFormatter={tickFormat} />
+      {avg !== undefined && (
+        <ReferenceLine y={avg} stroke={C.axis} strokeWidth={1} label={{ value: `Avg ${tickFormat(avg)}`, position: 'insideTopRight', fill: C.axis, fontSize: 11 }} />
+      )}
+      <Tooltip
+        cursor={{ fill: 'rgba(33,30,30,0.05)' }}
+        content={({ active, payload, label }) => {
+          if (!active || !payload?.length) return null;
+          const row = payload[0].payload as { value: number; ly: number | null; note?: string };
+          const rows: TipRow[] = [{ label: 'This year', value: format(row.value), color: C.s1 }];
+          if (row.ly !== null) rows.push({ label: 'Last year', value: format(row.ly), color: C.ly });
+          if (row.note) rows.push({ label: row.note, value: '' });
+          return <TipBox title={String(label)} rows={rows} />;
+        }}
+      />
+      <Bar dataKey="value" fill={C.s1} radius={[4, 4, 0, 0]} maxBarSize={24} isAnimationActive={false} />
+      <Line type="monotone" dataKey="ly" stroke={C.ly} strokeWidth={2} dot={false} connectNulls isAnimationActive={false} />
+    </ComposedChart>
+  );
+}
+
+// ---------------------------------------------------------------- Horizontal bars
+
+export interface HBarDatum {
+  label: string;
+  value: number;
+  /** Optional comparison value drawn as a second, gray bar. */
+  compare?: number | null;
+  color?: string;
+  id?: string | number;
+  tip?: TipRow[];
+}
+
+/** Height of a ranking chart with `n` rows (24 px bars, or a 20 px bar plus its comparison). */
+export function hbarHeight(n: number, compare = false): number {
+  return Math.max(1, n) * (compare ? 46 : 36) + 8;
+}
+
+/** Round domain that always includes zero, with room for labels. */
+function divDomain(data: HBarDatum[]): [number, number] {
+  const vals = data.map((d) => d.value);
+  const lo = Math.min(0, ...vals);
+  const hi = Math.max(0, ...vals);
+  const span = hi - lo || 1;
+  const step = Math.pow(10, Math.floor(Math.log10(span / 4)));
+  return [Math.floor((lo - span * 0.08) / step) * step, Math.ceil((hi + span * 0.12) / step) * step];
+}
+
+export function HBars({
+  width,
+  height,
+  data,
+  format,
+  onSelect,
+  compareLabel,
+  valueLabel = 'Value',
+  diverging = false,
+  arrows = false,
+  labelWidth = 120,
+  compareColor,
+}: {
+  arrows?: boolean;
+  /** When set, the comparison is a second full-size series in this color instead of a thin gray reference bar. */
+  compareColor?: string;
+  width?: number;
+  height?: number;
+  data: HBarDatum[];
+  format: (v: number) => string;
+  onSelect?: (d: HBarDatum) => void;
+  compareLabel?: string;
+  valueLabel?: string;
+  diverging?: boolean;
+  labelWidth?: number;
+}) {
+  return (
+    <BarChart width={width} height={height} data={data} layout="vertical" margin={{ top: 4, right: 72, bottom: 4, left: 4 }} barCategoryGap={compareLabel ? 8 : 10} barGap={3}>
+      <XAxis type="number" hide domain={diverging ? divDomain(data) : [0, 'auto']} />
+      <YAxis type="category" dataKey="label" {...axisProps} width={labelWidth} interval={0} tick={{ fill: '#211e1e', fontSize: 12 }} />
+      {diverging && <ReferenceLine x={0} stroke={C.axis} strokeWidth={1} />}
+      <Tooltip
+        cursor={{ fill: 'rgba(33,30,30,0.05)' }}
+        content={({ active, payload }) => {
+          if (!active || !payload?.length) return null;
+          const d = payload[0].payload as HBarDatum;
+          const rows: TipRow[] = d.tip ?? [{ label: valueLabel, value: format(d.value), color: d.color ?? C.s1 }];
+          if (!d.tip && d.compare !== undefined && d.compare !== null && compareLabel) rows.push({ label: compareLabel, value: format(d.compare), color: compareColor ?? C.ly });
+          return <TipBox title={d.label} rows={rows} />;
+        }}
+      />
+      <Bar
+        dataKey="value"
+        radius={[0, 4, 4, 0]}
+        maxBarSize={compareLabel ? 20 : 24}
+        isAnimationActive={false}
+        cursor={onSelect ? 'pointer' : undefined}
+        onClick={(d) => onSelect?.(d as unknown as HBarDatum)}
+      >
+        {data.map((d) => (
+          <Cell key={String(d.id ?? d.label)} fill={d.color ?? C.s1} />
+        ))}
+        <LabelList
+          dataKey="value"
+          content={(props) => {
+            const { x, y, width, height, value } = props as { x: number; y: number; width: number; height: number; value: number };
+            const neg = value < 0;
+            const arrow = arrows ? (value > 0.05 ? '▲ ' : value < -0.05 ? '▼ ' : '') : '';
+            return (
+              <text
+                x={neg ? x + width + 6 : x + width + 6}
+                y={y + height / 2 + 4}
+                fontSize={11.5}
+                fontWeight={700}
+                fill="#211e1e"
+                textAnchor="start"
+              >
+                {arrow}
+                {format(value)}
+              </text>
+            );
+          }}
+        />
+      </Bar>
+      {compareLabel && (
+        <Bar dataKey="compare" fill={compareColor ?? C.ly} radius={[0, 4, 4, 0]} maxBarSize={compareColor ? 20 : 10} isAnimationActive={false}>
+          {compareColor && (
+            <LabelList
+              dataKey="compare"
+              content={(props) => {
+                const { x, y, width, height, value } = props as { x: number; y: number; width: number; height: number; value: number };
+                return (
+                  <text x={x + width + 6} y={y + height / 2 + 4} fontSize={11.5} fontWeight={700} fill="#211e1e">
+                    {format(value)}
+                  </text>
+                );
+              }}
+            />
+          )}
+        </Bar>
+      )}
+    </BarChart>
+  );
+}
+
+// ---------------------------------------------------------------- Waterfall
+
+export interface WaterfallStep {
+  label: string;
+  value: number;
+  kind: 'total' | 'minus';
+}
+
+export function Waterfall({
+  width,
+  height,
+  steps,
+  format,
+}: {
+  width?: number;
+  height?: number;
+  steps: WaterfallStep[];
+  format: (v: number) => string;
+}) {
+  let run = 0;
+  const data = steps.map((s) => {
+    if (s.kind === 'total') {
+      run = s.value;
+      return { label: s.label, base: 0, bar: s.value, value: s.value, kind: s.kind };
+    }
+    const top = run;
+    run -= s.value;
+    return { label: s.label, base: run, bar: top - run, value: -s.value, kind: s.kind };
+  });
+  return (
+    <BarChart width={width} height={height} data={data} margin={{ top: 22, right: 8, bottom: 0, left: 4 }} barCategoryGap="28%">
+      <XAxis dataKey="label" {...axisProps} interval={0} tick={{ fill: '#211e1e', fontSize: 11 }} />
+      <YAxis {...axisProps} width={52} tickFormatter={format} />
+      <Tooltip
+        cursor={{ fill: 'rgba(33,30,30,0.05)' }}
+        content={({ active, payload }) => {
+          if (!active || !payload?.length) return null;
+          const d = payload[0].payload as { label: string; value: number; kind: string };
+          return <TipBox title={d.label} rows={[{ label: d.kind === 'total' ? 'Amount' : 'Reduces margin by', value: format(Math.abs(d.value)), color: d.kind === 'total' ? C.s1 : C.s2 }]} />;
+        }}
+      />
+      <Bar dataKey="base" stackId="w" fill="transparent" isAnimationActive={false} />
+      <Bar dataKey="bar" stackId="w" radius={[4, 4, 0, 0]} maxBarSize={44} isAnimationActive={false}>
+        {data.map((d) => (
+          <Cell key={d.label} fill={d.kind === 'total' ? C.s1 : C.s2} />
+        ))}
+        <LabelList
+          dataKey="value"
+          content={(props) => {
+            const { x, y, width, value } = props as { x: number; y: number; width: number; value: number };
+            return (
+              <text x={x + width / 2} y={y - 6} fontSize={11.5} fontWeight={700} fill="#211e1e" textAnchor="middle">
+                {value < 0 ? '−' : ''}
+                {format(Math.abs(value))}
+              </text>
+            );
+          }}
+        />
+      </Bar>
+    </BarChart>
+  );
+}
+
+// ---------------------------------------------------------------- Item map (scatter)
+
+export interface ItemPoint {
+  id: number;
+  name: string;
+  x: number;
+  y: number;
+  z: number;
+  flagged: boolean;
+}
+
+export function ItemMap({
+  width,
+  height,
+  points,
+  xRef,
+  yRef,
+  xDomain,
+  yDomain,
+  onSelect,
+  fmtX,
+  fmtY,
+  fmtZ,
+}: {
+  width?: number;
+  height?: number;
+  points: ItemPoint[];
+  xRef: number;
+  yRef: number;
+  xDomain: [number, number];
+  yDomain: [number, number];
+  onSelect: (id: number) => void;
+  fmtX: (v: number) => string;
+  fmtY: (v: number) => string;
+  fmtZ: (v: number) => string;
+}) {
+  const normal = points.filter((p) => !p.flagged);
+  const flagged = points.filter((p) => p.flagged);
+  const tip = ({ active, payload }: { active?: boolean; payload?: { payload?: unknown }[] }) => {
+    if (!active || !payload?.length) return null;
+    const p = payload[0].payload as ItemPoint;
+    return (
+      <TipBox
+        title={p.name}
+        rows={[
+          { label: 'Gross margin', value: fmtX(p.x) },
+          { label: 'Loss % of sales', value: fmtY(p.y) },
+          { label: 'Gross sales', value: fmtZ(p.z) },
+        ]}
+      />
+    );
+  };
+  return (
+    <ScatterChart width={width} height={height} margin={{ top: 12, right: 16, bottom: 8, left: 4 }}>
+      <XAxis type="number" dataKey="x" {...axisProps} domain={xDomain} allowDataOverflow tickFormatter={fmtX} name="GM %" />
+      <YAxis type="number" dataKey="y" {...axisProps} domain={yDomain} allowDataOverflow tickFormatter={fmtY} width={44} name="Loss %" />
+      <ZAxis type="number" dataKey="z" range={[24, 420]} />
+      <ReferenceLine x={xRef} stroke={C.axis} strokeWidth={1} />
+      <ReferenceLine y={yRef} stroke={C.axis} strokeWidth={1} />
+      <Tooltip content={tip} cursor={false} />
+      <Scatter
+        data={normal}
+        fill={C.s1}
+        fillOpacity={0.55}
+        stroke="#fff"
+        strokeWidth={1}
+        isAnimationActive={false}
+        cursor="pointer"
+        onClick={(p) => onSelect((p as unknown as ItemPoint).id)}
+      />
+      <Scatter
+        data={flagged}
+        fill={C.s2}
+        fillOpacity={0.85}
+        stroke="#fff"
+        strokeWidth={1}
+        isAnimationActive={false}
+        cursor="pointer"
+        onClick={(p) => onSelect((p as unknown as ItemPoint).id)}
+      />
+    </ScatterChart>
+  );
+}
+
+export const ChartGrid = ({ children, cols = 2 }: { children: ReactNode; cols?: 2 | 3 }) => <div className={`chart-grid cols-${cols}`}>{children}</div>;
