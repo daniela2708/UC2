@@ -630,7 +630,9 @@ export function FreshReportView({ openDefinitions }: ViewProps) {
 
       <section className="card table-card" aria-label="Fresh Report table">
         <p className="card-caption">Region › District › Store Number · {rangeLabel}</p>
-        <div className="table-tools">
+        <HierTable
+          tools={
+            <>
           <button type="button" className="chart-view-btn" aria-expanded={showCols} onClick={() => setShowCols((v) => !v)}>
             {showCols ? <ChevronDown size={14} aria-hidden="true" /> : <ChevronRight size={14} aria-hidden="true" />}
             {groupLabel}
@@ -638,8 +640,8 @@ export function FreshReportView({ openDefinitions }: ViewProps) {
           <InfoTip text="Gross Margin Rate for each week of the fiscal period (each day of the week in Day mode), with the change in points under each value." />
           <span className="filter-spacer" />
           <LossBasisControl />
-        </div>
-        <HierTable
+            </>
+          }
           hierarchy="Region › District › Store Number"
           columns={columns}
           defaultSort={{ key: 'label', dir: 'asc' }}

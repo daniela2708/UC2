@@ -2074,3 +2074,33 @@ b.pos {
   background: var(--dark);
   color: var(--white);
 }
+
+/* Table toolbar: the view's controls on the left, Columns and Export on the right, on one row (wraps, never overlaps) */
+.table-buttons {
+  display: inline-flex;
+  gap: 6px;
+  align-items: center;
+  margin-left: auto;
+}
+.table-export.with-tools {
+  margin-top: 0;
+  pointer-events: auto;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px 14px;
+  padding: 0 16px 10px;
+}
+.table-tools-inline {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px 14px;
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.table-tools-inline .sku-filter {
+  display: flex;
+  gap: 8px;
+  align-items: flex-end;
+  margin: 0;
+}

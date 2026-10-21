@@ -641,7 +641,10 @@ export function CategoryItemView({ openDefinitions }: ViewProps) {
 
       <section className="card table-card" aria-label="Category-item table">
         <p className="card-caption">Department › Category › Subcategory › SKU Number · {range.label}</p>
-        <div className="table-tools">
+        <HierTable
+          key={scope.productKey}
+          tools={
+            <>
           <div className="cost-basis" role="group" aria-label="Cost includes">
             <span className="toggle-label">Cost includes</span>
             <button type="button" className="cost-chip" aria-pressed="true" disabled title="List cost is always included">
@@ -662,9 +665,8 @@ export function CategoryItemView({ openDefinitions }: ViewProps) {
           </label>
           <LossBasisControl />
           <FlagRulesButton />
-        </div>
-        <HierTable
-          key={scope.productKey}
+            </>
+          }
           hierarchy="Department › Category › Subcategory › SKU Number"
           columns={itemColumns(state.idStores, state.lossBasis)}
           tableId="items"

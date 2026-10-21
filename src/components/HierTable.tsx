@@ -56,7 +56,10 @@ export function HierTable({
   maxHeight = 640,
   tableId,
   presets = [],
+  tools,
 }: {
+  /** The view's own table controls, shown on the same row as Columns and Export (left of them). */
+  tools?: ReactNode;
   /** Named column sets offered in the column chooser (e.g. "Loss focus"). */
   presets?: { label: string; keys: string[] }[];
   /** Enables the column chooser; the choice is stored in the URL under this id. */
@@ -187,8 +190,10 @@ export function HierTable({
 
   return (
     <>
-    {(exportTitle || tableId) && (
-      <div className="table-export">
+    {(exportTitle || tableId || tools) && (
+      <div className={`table-export${tools ? ' with-tools' : ''}`}>
+        {tools && <div className="table-tools-inline">{tools}</div>}
+        <span className="table-buttons">
         {tableId && (
           <ColumnChooser
             columns={columns}
@@ -199,6 +204,7 @@ export function HierTable({
           />
         )}
         {exportTitle && <ExportButton getSheet={getSheet} fileName={exportTitle} label="Export to Excel" />}
+        </span>
       </div>
     )}
     <div className="table-scroll" style={{ maxHeight }}>

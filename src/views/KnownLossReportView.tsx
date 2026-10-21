@@ -301,7 +301,10 @@ export function KnownLossReportView({ openDefinitions }: ViewProps) {
             <p className="side-sub">One row per Store Num · {skuName ? 'filtered by SKU Number' : 'all items in scope; pick a SKU Number to narrow it'}</p>
           </div>
         </div>
-        <div className="toggle-row sku-filter">
+        <HierTable
+          key={`stores-${sku}`}
+          tools={
+            <span className="sku-filter">
           <SkuSearch item={skuValid ? sku : -1} onSelect={(i) => setSku(i)} />
           {skuValid && (
             <button type="button" className="chart-view-btn" onClick={() => setSku(-1)}>
@@ -309,9 +312,8 @@ export function KnownLossReportView({ openDefinitions }: ViewProps) {
               Clear SKU
             </button>
           )}
-        </div>
-        <HierTable
-          key={`stores-${sku}`}
+            </span>
+          }
           hierarchy="Store Num"
           columns={[{ key: 'district', label: 'District', left: true }, ...itemCols(basis)]}
           tableId="klstores"
