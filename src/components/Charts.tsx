@@ -27,20 +27,23 @@ import {
  * and always carry ▲ / ▼ text.
  */
 export const C = {
-  s1: '#2a78d6',
-  s2: '#eb6834',
-  s3: '#1baf7a',
-  s4: '#eda100',
+  // Sober categorical steps (validated: lightness, chroma, CVD and normal-vision separation pass on the light surface).
+  s1: '#2d63a0',
+  s2: '#c27530',
+  s3: '#22907a',
+  s4: '#bd9306',
   ly: '#a2a19c',
   grid: '#ecebe5',
   axis: '#797873',
   pos: '#2e7d4f',
   neg: '#c62828',
-  soft: '#cde2fb',
+  soft: '#d5e0ec',
+  /** Recessive bars for a secondary panel (e.g. volume under a cost line). */
+  qty: '#b3bfcc',
 };
 
 /** Categorical colors for series beyond the core four (ingredients, components). */
-export const SERIES = [C.s1, C.s2, C.s3, C.s4, '#6250d6', '#e87ba4', '#0f9fb5', '#8a6d3b'];
+export const SERIES = [C.s1, C.s2, C.s3, '#6a5bbf', C.s4, '#c05380'];
 
 export interface LegendItem {
   label: string;
@@ -557,7 +560,7 @@ export function Waterfall({
       <Bar dataKey="base" stackId="w" fill="transparent" isAnimationActive={false} />
       <Bar dataKey="bar" stackId="w" radius={[4, 4, 0, 0]} maxBarSize={44} isAnimationActive={false}>
         {data.map((d) => (
-          <Cell key={d.label} fill={d.kind === 'total' ? C.s1 : C.s2} />
+          <Cell key={d.label} fill={d.kind === 'total' ? C.s1 : C.neg} />
         ))}
         <LabelList
           dataKey="value"
@@ -648,7 +651,7 @@ export function ItemMap({
       />
       <Scatter
         data={flagged}
-        fill={C.s2}
+        fill={C.neg}
         fillOpacity={0.85}
         stroke="#fff"
         strokeWidth={1}
@@ -713,7 +716,7 @@ export function CostQtyPanels({
       { label: 'Current PO Cost (HQ)', value: fmtCost(p.hq), color: C.axis },
     ];
     if (showRetail && p.retail !== null) rows.push({ label: 'Retail', value: fmtCost(p.retail), color: C.s3 });
-    rows.push({ label: qtyLabel, value: fmtQty(p.qty), color: C.s2 });
+    rows.push({ label: qtyLabel, value: fmtQty(p.qty), color: C.qty });
     return <TipBox title={String(label)} rows={rows} />;
   };
   return (
@@ -742,7 +745,7 @@ export function CostQtyPanels({
         <XAxis dataKey="x" {...axisProps} interval="preserveStartEnd" minTickGap={28} />
         <YAxis {...axisProps} width={60} tickFormatter={fmtQty} />
         <Tooltip content={tip} cursor={{ fill: 'rgba(33,30,30,0.05)' }} />
-        <Bar dataKey="qty" fill={C.s2} radius={[3, 3, 0, 0]} maxBarSize={14} isAnimationActive={false} />
+        <Bar dataKey="qty" fill={C.qty} radius={[3, 3, 0, 0]} maxBarSize={14} isAnimationActive={false} />
       </BarChart>
     </div>
   );
@@ -781,7 +784,17 @@ export function StackedBars({
         }}
       />
       {series.map((sr, n) => (
-        <Bar key={sr.key} dataKey={sr.key} stackId="s" fill={sr.color} maxBarSize={28} isAnimationActive={false} radius={n === series.length - 1 ? [3, 3, 0, 0] : undefined} />
+        <Bar
+          key={sr.key}
+          dataKey={sr.key}
+          stackId="s"
+          fill={sr.color}
+          stroke="#fff"
+          strokeWidth={1}
+          maxBarSize={28}
+          isAnimationActive={false}
+          radius={n === series.length - 1 ? [3, 3, 0, 0] : undefined}
+        />
       ))}
     </BarChart>
   );

@@ -597,14 +597,15 @@ select {
   border-color: var(--n3);
 }
 .chip.status-proposed {
-  background: #eef4fb;
-  color: var(--info);
-  border-color: #c9dbef;
+  background: var(--white);
+  color: var(--n5);
+  border-color: var(--n3);
 }
 .chip.status-pending {
-  background: #fff4d6;
-  color: #8a6400;
-  border-color: #f1d98c;
+  background: var(--n2);
+  color: #4a4845;
+  border-color: var(--n4);
+  border-style: dashed;
 }
 .chip.rw {
   background: var(--dark);
@@ -624,8 +625,8 @@ select {
   color: var(--dark);
 }
 .chip.amber {
-  background: #fff4d6;
-  color: #8a6400;
+  background: var(--n2);
+  color: #4a4845;
 }
 
 /* ---------------------------------------------------------------- Key figures */
@@ -784,7 +785,7 @@ tr.clickable:hover td {
   background: var(--n1);
 }
 tr.is-stale td {
-  background: #fffaf0;
+  background: #faf9f5;
 }
 .hier-label {
   display: flex;
@@ -802,7 +803,7 @@ tr.is-stale td {
   font-weight: 600;
 }
 .hier-label .lbl small .amber {
-  color: #a57400;
+  color: #6b5d3f;
 }
 .icon-btn {
   border: 0;
@@ -1166,7 +1167,7 @@ tr.is-stale td {
   border-radius: 3px;
 }
 .def.is-focus {
-  background: #fffaf0;
+  background: var(--n1);
   margin: 0 -10px;
   padding: 14px 10px;
 }
@@ -1414,10 +1415,10 @@ tr.is-stale td {
   display: block;
   height: 100%;
   border-radius: 3px;
-  background: #2a78d6;
+  background: #2d63a0;
 }
 .cell-bar .fill.warm {
-  background: #eb6834;
+  background: #c27530;
 }
 table.hier tbody tr:not(.total-row):hover td {
   background: #faf9f5;
@@ -1558,7 +1559,7 @@ tr.total-row td {
 }
 .defs-table tr.is-focus th,
 .defs-table tr.is-focus td {
-  background: #fffaf0;
+  background: var(--n1);
 }
 .defs-foot {
   padding: 14px 24px 18px;
@@ -1670,19 +1671,6 @@ table.hier thead th {
 }
 .banner-more:hover {
   color: var(--dark);
-}
-
-.tab-divider {
-  align-self: center;
-  margin: 0 6px 0 14px;
-  padding-left: 16px;
-  border-left: 1px solid var(--n3);
-  font-family: var(--mono);
-  font-size: 10px;
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
-  color: var(--n4);
-  white-space: nowrap;
 }
 
 .ic-picker-row {

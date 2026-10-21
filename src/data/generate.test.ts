@@ -1,11 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { globalWeek, weekStartDay } from './calendar';
+import { globalWeek, LAST_COMPLETE_WEEK, weekStartDay } from './calendar';
 import { buildModel, getModel, NW } from './generate';
 import { PLANTED } from './planted';
-import { DEPTS, ITEMS } from './products';
+import { DEPTS, ITEMS, recipeCostAt } from './products';
 import { STORES } from './stores';
 import { DEFAULT_STATE, resolveTime, BASE_TIME, tabDefaultTime } from '../lib/filters';
-import { buildScope, findFlags, freshStoreWeeks, pluRows, storeCatLoss } from '../lib/selectors';
+import { buildScope, findFlags, freshStoreWeeks, storeCatLoss } from '../lib/selectors';
 import { freshGpPct, totalPurchases } from '../lib/kpis';
 import { shrimpStory } from '../views/common';
 
@@ -82,13 +82,25 @@ describe('planted stories', () => {
     expect(lossIncl - loss).toBeGreaterThan(8.9e6);
   });
 
-  it('3: 16 in. Pepperoni Pizza tops PLU Cost Watch with a ~9 pt margin gap', () => {
-    const rows = pluRows(buildScope(DEFAULT_STATE, ytd));
-    expect(ITEMS[rows[0].item].name).toBe('16 in. Pepperoni Pizza');
-    expect(rows[0].updatedLabel).toBe('03/2025');
-    const gap = (rows[0].displayedMargin - rows[0].estMargin) * 100;
-    expect(gap).toBeGreaterThan(8);
-    expect(gap).toBeLessThan(10.5);
+  it('3: 16 in. Pepperoni Pizza (recipe last costed 03/2025) has the largest recipe cost gap, about 8 pts of margin', () => {
+    const m = getModel();
+    const fy0 = globalWeek(2026, 1);
+    const gaps = ITEMS.filter((it) => it.composite).map((it) => {
+      const c = it.composite!;
+      let units = 0;
+      let net = 0;
+      for (let w = fy0; w <= LAST_COMPLETE_WEEK; w++) {
+        units += m.units[it.idx * NW + w];
+        net += m.sales[it.idx * NW + w] * (1 - m.disc[it.dept * NW + w]);
+      }
+      const est = recipeCostAt(c, LAST_COMPLETE_WEEK);
+      return { it, impact: (est - c.standardCost) * units, pts: ((est - c.standardCost) / (net / units)) * 100 };
+    });
+    gaps.sort((a, b) => b.impact - a.impact);
+    expect(gaps[0].it.name).toBe('16 in. Pepperoni Pizza');
+    expect(gaps[0].it.composite!.updatedLabel).toBe('03/2025');
+    expect(gaps[0].pts).toBeGreaterThan(7);
+    expect(gaps[0].pts).toBeLessThan(10.5);
   });
 
   it('4: shrimp cost is up ~18 % since P8 with flat retail, Seafood GM % down 2–3.5 pts', () => {

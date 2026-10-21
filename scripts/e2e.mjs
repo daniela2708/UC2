@@ -1,5 +1,5 @@
 // End-to-end check of the production build: password gate, then "Simulate cost change" in Category-Item
-// Summary, Cost Watch and Item Cost Over Time must open the simulator with the item prefilled.
+// Summary and Item Cost Over Time must open the simulator with the item prefilled.
 //
 //   npm run test:e2e                         builds, serves dist with `vite preview`, runs the checks
 //   BASE_URL=https://… node scripts/e2e.mjs  runs the same checks against a deployed URL
@@ -129,12 +129,7 @@ async function main() {
   const ci = await simulate(`document.querySelector('button[aria-label="Simulate cost change: Roma Tomatoes"]')`, 'Category-Item Summary');
   check('Category-Item Summary opens the simulator for Roma Tomatoes, prefilled', ci.visible && ci.sub.includes('Roma Tomatoes') && /^\d+\.\d{2}$/.test(ci.value) && Number(ci.value) > 0, `prefill $${ci.value}`);
 
-  // 3. Cost Watch: first row.
-  await send('Page.navigate', { url: `${base}/?tab=cost` });
-  const cw = await simulate(`document.querySelector('table.hier button[aria-label^="Simulate cost change: "]')`, 'Cost Watch');
-  check('Cost Watch opens the simulator for its first row, prefilled', cw.visible && cw.name !== '' && cw.sub.includes(cw.name) && Number(cw.value) > 0, `${cw.name} · prefill $${cw.value}`);
-
-  // 4. Item Cost Over Time: the view's button (Roma tomatoes by default).
+  // 3. Item Cost Over Time: the view's button (Roma tomatoes by default).
   await send('Page.navigate', { url: `${base}/?tab=itemcost` });
   await until(`[...document.querySelectorAll('button.btn-outline')].some((b) => b.textContent.includes('Simulate cost change'))`, 'Item Cost Over Time: button');
   const ic = await simulate(`[...document.querySelectorAll('button.btn-outline')].find((b) => b.textContent.includes('Simulate cost change'))`, 'Item Cost Over Time');

@@ -334,7 +334,7 @@ export interface NewPoCost {
 }
 
 /**
- * New PO Cost (Cost Watch): period-based PO cost of the last complete week. When nothing was bought that week,
+ * New PO Cost: period-based PO cost of the last complete week. When nothing was bought that week,
  * the latest earlier week with purchases ("as of W41"). Composite PLUs: the recipe at that week's ingredient costs.
  */
 export function newPoCostInfo(i: number, endWeek = LAST_COMPLETE_WEEK): NewPoCost {

@@ -252,7 +252,7 @@ function ItemCostBody({
           { label: costLabel, color: C.s1 },
           { label: 'Current PO Cost (HQ)', color: C.axis },
           ...(showRetail ? [{ label: 'Retail', color: C.s3 }] : []),
-          { label: qtyLabel, color: C.s2, kind: 'rect' as const },
+          { label: qtyLabel, color: C.qty, kind: 'rect' as const },
         ]}
         table={{
           head: [bucket, costLabel, 'Current PO Cost (HQ)', 'Retail', qtyLabel, produced ? 'Production cost' : 'PO spend'],

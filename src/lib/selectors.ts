@@ -2,7 +2,7 @@
  * Memoised aggregations behind each tab. All rates are computed in kpis.ts as
  * ratios of the totals assembled here.
  */
-import { fiscalOfWeek, formatDay, globalWeek, LAST_COMPLETE_WEEK, weekOfDay } from '../data/calendar';
+import { LAST_COMPLETE_WEEK, weekOfDay } from '../data/calendar';
 import { hash01 } from '../data/prng';
 import {
   budgetGp,
@@ -26,15 +26,13 @@ import {
   type LossEvent,
   type Model,
 } from '../data/generate';
-import { CATS, DEPTS, estimatedCompositeCost, ITEMS } from '../data/products';
+import { CATS, DEPTS, ITEMS } from '../data/products';
 import { STORES } from '../data/stores';
 import {
   freshGpPct,
   highLossFlag,
   inNewItemWindow,
   likelyEntryError,
-  marginImpactOf,
-  safeDiv,
   weeksOnSale,
   netCostPerUnit,
   PURCHASE_CHANNELS,
@@ -46,7 +44,7 @@ import {
   type Uom,
 } from './kpis';
 import { itemIndices, storeIndices, type CostSource, type FilterState, type ResolvedRange } from './filters';
-import { costFellSinceHq, hqUnitCostWeek, newPoCostInfo, poCostFromWeek, poTotals, poUnitCostWeek, supplyOf } from '../data/purchasing';
+import { hqUnitCostWeek, poCostFromWeek, poTotals, poUnitCostWeek } from '../data/purchasing';
 
 // ---------------------------------------------------------------- Memo
 
@@ -1262,62 +1260,6 @@ export function shrinkAggregates(scope: Scope): ShrinkAgg[] {
   });
 }
 
-// ---------------------------------------------------------------- PLU Cost Watch
-
-export interface PluRow {
-  item: number;
-  components: number;
-  currentCost: number;
-  updatedLabel: string;
-  ageMonths: number;
-  estCost: number;
-  units: number;
-  /** (recipe at today's ingredient costs − recipe cost in HQ) × units sold, FY to date. */
-  costChange: number;
-  /** −cost change: margin overstated in reports when the recipe costs more today. */
-  marginImpact: number;
-  displayedMargin: number;
-  estMargin: number;
-  family: string;
-}
-
-export function pluRows(scope: Scope): PluRow[] {
-  const m = getModel();
-  const sh = shareSet(scope);
-  const fy0 = globalWeek(fiscalOfWeek(LAST_COMPLETE_WEEK).fy, 1);
-  const out: PluRow[] = [];
-  for (const i of scope.items) {
-    const it = ITEMS[i];
-    if (!it.composite) continue;
-    const comp = it.composite;
-    let units = 0;
-    let net = 0;
-    for (let w = fy0; w < NW; w++) {
-      const f = sh.sales[it.cat * NW + w];
-      const adj = scopeSalesAdj(m, scope.stores, i, w);
-      units += m.units[i * NW + w] * f + adj.u;
-      net += (m.sales[i * NW + w] * f + adj.g) * (1 - m.disc[it.dept * NW + w]);
-    }
-    const est = estimatedCompositeCost(comp, LAST_COMPLETE_WEEK);
-    const netPrice = units > 0 ? net / units : 0;
-    out.push({
-      item: i,
-      components: comp.components.length,
-      currentCost: comp.standardCost,
-      updatedLabel: comp.updatedLabel,
-      ageMonths: comp.ageMonths,
-      estCost: est,
-      units,
-      costChange: (est - comp.standardCost) * units,
-      marginImpact: marginImpactOf((est - comp.standardCost) * units),
-      displayedMargin: netPrice > 0 ? 1 - comp.standardCost / netPrice : 0,
-      estMargin: netPrice > 0 ? 1 - est / netPrice : 0,
-      family: comp.family,
-    });
-  }
-  return out.sort((a, b) => a.marginImpact - b.marginImpact);
-}
-
 // ---------------------------------------------------------------- Misc
 
 export function periodWeeks(range: ResolvedRange): number[] {
@@ -1550,87 +1492,6 @@ export function storeKnownLoss(scope: Scope, item = -1): StoreKnownLoss[] {
     return out.sort((a, b) => b.loss - a.loss);
   });
 }
-
-// ---------------------------------------------------------------- Cost Watch: PO vs HQ cost
-
-export interface CostWatchRow {
-  item: number;
-  hq: number;
-  hqUpdated: string;
-  hqAgeMonths: number;
-  next: number | null;
-  /** Week the New PO Cost comes from (the last complete week unless nothing was bought that week). */
-  nextWeek: number;
-  /** Freight per unit inside the New PO Cost (the HQ cost excludes freight). */
-  freight: number | null;
-  /** HQ was set at a seasonal or commodity high that has since come down. */
-  costFell: boolean;
-  gap: number | null;
-  vendors: string[];
-  units4w: number;
-  retail: number | null;
-  gmHq: number | null;
-  gmPo: number | null;
-  /** (New PO Cost − HQ cost) × units sold in the last 4 weeks. Positive = PO costs more than HQ. */
-  costChange: number;
-  /** −cost change: margin overstated in reports when POs cost more than HQ. */
-  marginImpact: number;
-}
-
-const costWatchCache = new Map<string, CostWatchRow[]>();
-
-/**
- * PLU and random-weight items: HQ cost vs the New PO Cost (period-based PO cost of the last complete week).
- * Cost change = (New PO Cost − HQ cost) × units sold in the last 4 weeks (chain); margin impact = −cost change.
- */
-export function costWatchRows(scope: Scope): CostWatchRow[] {
-  return memo(costWatchCache, scope.productKey, () => {
-    const m = getModel();
-    const out: CostWatchRow[] = [];
-    for (const i of scope.items) {
-      const it = ITEMS[i];
-      if (it.costType === 'UPC' || it.composite) continue;
-      const sup = supplyOf(i);
-      let sales = 0;
-      let units = 0;
-      for (let w = LAST_COMPLETE_WEEK - 3; w <= LAST_COMPLETE_WEEK; w++) {
-        sales += m.sales[i * NW + w];
-        units += m.units[i * NW + w];
-      }
-      if (units <= 0) continue;
-      const hq = sup.hqCost;
-      const info = newPoCostInfo(i);
-      const next = info.cost;
-      const retail = safeDiv(sales, units);
-      const ageMonths = Math.max(0, Math.round((AS_OF_MONTH_INDEX - monthIndex(sup.hqUpdatedDay)) * 1));
-      out.push({
-        item: i,
-        hq,
-        hqUpdated: sup.hqUpdatedLabel,
-        hqAgeMonths: ageMonths,
-        next,
-        nextWeek: info.week,
-        freight: next === null ? null : (next * sup.freightRate) / (1 + sup.freightRate),
-        costFell: costFellSinceHq(i),
-        gap: next === null || hq <= 0 ? null : next / hq - 1,
-        vendors: sup.vendors.map((v) => v.name),
-        units4w: units,
-        retail,
-        gmHq: retail ? 1 - hq / retail : null,
-        gmPo: retail && next !== null ? 1 - next / retail : null,
-        costChange: next === null ? 0 : (next - hq) * units,
-        marginImpact: next === null ? 0 : marginImpactOf((next - hq) * units),
-      });
-    }
-    return out.sort((a, b) => a.marginImpact - b.marginImpact);
-  });
-}
-
-function monthIndex(day: number): number {
-  const [mm, , yyyy] = formatDay(day).split('/');
-  return Number(yyyy) * 12 + Number(mm);
-}
-const AS_OF_MONTH_INDEX = 2026 * 12 + 10;
 
 // ---------------------------------------------------------------- Known Loss Report: new items watch
 

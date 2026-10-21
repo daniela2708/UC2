@@ -1,6 +1,6 @@
 import type { Status } from '../components/ui';
 
-export type ViewName = 'Category-Item Summary' | 'Item Cost Over Time' | 'Ingredients View' | 'Fresh Report' | 'Known Loss Report' | 'Cost Watch';
+export type ViewName = 'Category-Item Summary' | 'Item Cost Over Time' | 'Ingredients View' | 'Fresh Report' | 'Known Loss Report';
 
 export interface KpiDefinition {
   id: string;
@@ -131,7 +131,7 @@ export const KPI_DEFINITIONS: KpiDefinition[] = [
     reconciliation: 'PO lines tie to Biceps; HQ cost ties to Retalix HQ.',
     status: 'Proposed',
     priority: 'Must',
-    views: [CI, IC, 'Cost Watch'],
+    views: [CI, IC],
     note: 'Same value for PLU and random-weight items under the current definitions (open question 5). Replaces the earlier 4-week recency weighting. UPC items keep the HQ average cost; composite PLUs use the recipe cost.',
   },
 
@@ -311,7 +311,7 @@ KPI_DEFINITIONS.push(
     reconciliation: 'Matches the item master PLU / UPC flag.',
     status: 'Proposed',
     priority: 'Proposed',
-    views: [CI, IC, 'Cost Watch'],
+    views: [CI, IC],
   },
   {
     id: 'cost-source',
@@ -360,7 +360,7 @@ KPI_DEFINITIONS.push(
     reconciliation: 'To confirm with each category team.',
     status: 'Proposed',
     priority: 'Proposed',
-    views: [CI, IC, IV, 'Cost Watch'],
+    views: [CI, IC, IV],
   },
 
   {
@@ -374,32 +374,20 @@ KPI_DEFINITIONS.push(
     reconciliation: 'Matches the Deli cost-change spreadsheet.',
     status: 'Proposed',
     priority: 'Proposed',
-    views: [CI, IC, 'Cost Watch'],
+    views: [CI, IC],
   },
-  {
-    id: 'cost-watch-gap',
-    name: 'Cost gap, of which freight, margin impact (Cost Watch)',
-    unit: '%, $',
-    definition:
-      'Cost gap % = New PO Cost ÷ Current PO Cost (HQ) − 1, where HQ is Retalix HQ, Weis’s back-office system. "Of which freight" is the freight per unit inside the New PO Cost: HQ costs exclude freight, so that part of the gap is expected and the rest is a real cost change. Some items cost less on POs than in HQ because HQ was set at a seasonal or commodity high that has since come down. Cost change = (New PO Cost − HQ cost) × units sold in the last 4 weeks; margin impact = −cost change (red when costs went up).',
-    formula: 'freight per unit = New PO Cost × freight rate ÷ (1 + freight rate); margin impact = −(New PO Cost − HQ) × units',
-    source: `${BICEPS} · Retalix HQ`,
-    reconciliation: 'Freight per case ties to Biceps PO lines.',
-    status: 'Proposed',
-    priority: 'Proposed',
-    views: ['Cost Watch'],
-  },
+
   {
     id: 'recipe-age',
     name: 'Recipe cost age',
     unit: 'months',
-    definition: 'Months since a composite PLU’s recipe cost was last updated in the Excel recipe file and Retalix HQ. The Deli team re-costs recipes about once a year; older than 6 months gets an amber chip in Cost Watch.',
+    definition: 'Months since a composite PLU’s recipe cost was last updated in the Excel recipe file and Retalix HQ. The Deli team re-costs recipes about once a year; older than 6 months is highlighted on the item row in Category-Item Summary and counted in the stale-costs banner.',
     formula: 'as-of month − last update month',
     source: 'Deli recipe Excel files · Retalix HQ',
     reconciliation: 'Matches the update dates in the recipe files.',
     status: 'Draft',
     priority: 'Proposed',
-    views: [IC, IV, 'Cost Watch'],
+    views: [CI, IC, IV],
   },
   {
     id: 'ingredients-gp',

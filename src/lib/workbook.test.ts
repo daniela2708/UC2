@@ -4,7 +4,7 @@ import { getModel, NW } from '../data/generate';
 import { DEPTS, CATS, ingredientUnitCost, ITEMS, itemByName, recipeCostAt } from '../data/products';
 
 const ingredientUnitCostToday = (key: string) => ingredientUnitCost(key, LAST_COMPLETE_WEEK);
-import { compositeCostAt, costSeries, currentPoCost, newPoCost, newPoCostInfo, ordersOf, poCostForDays, poCostFromWeek, poTotals, poUnitCostWeek, recipeCost, recipeLines, supplyOf } from '../data/purchasing';
+import { compositeCostAt, costSeries, currentPoCost, newPoCost, newPoCostInfo, ordersOf, poCostForDays, poCostFromWeek, poTotals, poUnitCostWeek, recipeCost, recipeLines } from '../data/purchasing';
 import { clampIngredientCost, ingredientPickerItems, ingredientsSummary, pluUsing, resolveIngredientsItem, unitsProduced52, whereUsed } from './ingredients';
 import { PLANTED } from '../data/planted';
 import { STORES } from '../data/stores';
@@ -43,9 +43,7 @@ import { IT_HEAD, itEntryOf, itRows, itSheet } from './itReport';
 import {
   addAgg,
   buildScope,
-  costWatchRows,
   dsdReceipts,
-  pluRows,
   purchaseSource,
   emptyAgg,
   findFlags,
@@ -653,22 +651,22 @@ describe('sign convention: a cost increase is a margin loss', () => {
     expect(down.annualCostChange).toBeCloseTo(-500);
     expect(down.impactNoRetailChange).toBeCloseTo(500);
   });
-  it('Cost Watch: items costing more on POs than in HQ show a negative margin impact, cheaper ones a positive one', () => {
-    const rows = costWatchRows(buildScope(DEFAULT_STATE, ytd));
-    const ups = rows.filter((r) => r.costChange > 0);
-    const downs = rows.filter((r) => r.costChange < 0);
-    expect(ups.length).toBeGreaterThan(0);
-    expect(downs.length).toBeGreaterThan(0);
-    for (const r of rows) expect(r.marginImpact).toBeCloseTo(-r.costChange, 9);
-    // Sorted with the largest margin loss first.
-    for (let k = 1; k < rows.length; k++) expect(rows[k].marginImpact).toBeGreaterThanOrEqual(rows[k - 1].marginImpact);
-    for (const r of pluRows(buildScope(DEFAULT_STATE, ytd))) expect(r.marginImpact).toBeCloseTo(-r.costChange, 9);
-  });
 });
 
 describe('realism of the cost stories', () => {
-  const sc = buildScope(DEFAULT_STATE, ytd);
-  it('about 55–65 % of recipe PLUs are older than 6 months, a few older than 12, and 16 in. Pepperoni Pizza is the oldest and the top margin impact', () => {
+  /** PLU and random-weight items with sales in the last 4 weeks: (New PO Cost − HQ cost) × units sold. */
+  const poVsHq = () => {
+    const m = getModel();
+    return ITEMS.filter((it) => it.costType !== 'UPC' && !it.composite)
+      .map((it) => {
+        let units = 0;
+        for (let w = LAST_COMPLETE_WEEK - 3; w <= LAST_COMPLETE_WEEK; w++) units += m.units[it.idx * NW + w];
+        const next = newPoCost(it.idx);
+        return { item: it.idx, units, change: next === null ? 0 : (next - currentPoCost(it.idx)) * units };
+      })
+      .filter((r) => r.units > 0);
+  };
+  it('about 55–65 % of recipe PLUs are older than 6 months, a few older than 12, and 16 in. Pepperoni Pizza is the oldest', () => {
     const comp = ITEMS.filter((x) => x.composite);
     const over6 = comp.filter((x) => x.composite!.ageMonths > 6).length / comp.length;
     const over12 = comp.filter((x) => x.composite!.ageMonths > 12).length;
@@ -678,22 +676,14 @@ describe('realism of the cost stories', () => {
     expect(over12).toBeLessThanOrEqual(comp.length * 0.15);
     const oldest = Math.max(...comp.map((x) => x.composite!.ageMonths));
     expect(itemByName('16 in. Pepperoni Pizza').composite!.ageMonths).toBe(oldest);
-    expect(ITEMS[pluRows(sc)[0].item].name).toBe('16 in. Pepperoni Pizza');
   });
-  it('most items cost more on POs than in HQ, about 25–30 % cost less, and pie pumpkins lead the margin impact', () => {
-    const rows = costWatchRows(sc);
-    const cheaper = rows.filter((r) => r.costChange < 0).length / rows.length;
+  it('most items cost more on POs than in Retalix HQ, about 25–30 % cost less, and pie pumpkins have the largest gap', () => {
+    const rows = poVsHq();
+    const cheaper = rows.filter((r) => r.change < 0).length / rows.length;
     expect(cheaper).toBeGreaterThanOrEqual(0.25);
     expect(cheaper).toBeLessThanOrEqual(0.3);
+    rows.sort((a, b) => b.change - a.change);
     expect(ITEMS[rows[0].item].name).toBe('Pie Pumpkins');
-  });
-  it('freight inside the New PO Cost explains part of the gap (HQ excludes freight)', () => {
-    for (const r of costWatchRows(sc)) {
-      if (r.next === null || r.freight === null) continue;
-      const fr = supplyOf(r.item).freightRate;
-      expect(r.freight).toBeCloseTo((r.next * fr) / (1 + fr), 9);
-      expect(r.freight).toBeLessThan(r.next);
-    }
   });
 });
 

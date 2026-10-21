@@ -247,8 +247,8 @@ export function FilterCard() {
             { value: '-1', label: 'All fresh' },
             ...DEPTS.map((d) => ({
               value: String(d.idx),
-              label: state.tab === 'cost' && !COMPOSITE_DEPTS.has(d.name) ? `${d.name} (no composite PLUs)` : d.name,
-              disabled: state.tab === 'cost' && !COMPOSITE_DEPTS.has(d.name),
+              label: state.tab === 'ingredients' && !COMPOSITE_DEPTS.has(d.name) ? `${d.name} (no composite PLUs)` : d.name,
+              disabled: state.tab === 'ingredients' && !COMPOSITE_DEPTS.has(d.name),
             })),
           ]}
           onChange={(v) => update(actions.dept(Number(v)))}

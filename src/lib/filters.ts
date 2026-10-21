@@ -44,7 +44,7 @@ import {
 
 // ---------------------------------------------------------------- Types
 
-export type TabId = 'items' | 'itemcost' | 'ingredients' | 'fresh' | 'loss' | 'cost';
+export type TabId = 'items' | 'itemcost' | 'ingredients' | 'fresh' | 'loss';
 /** The workbook's required views come first; the rest are proposed additional views. */
 export const TABS: { id: TabId; label: string; required: boolean }[] = [
   { id: 'items', label: 'Category-Item Summary', required: true },
@@ -52,10 +52,9 @@ export const TABS: { id: TabId; label: string; required: boolean }[] = [
   { id: 'ingredients', label: 'Ingredients View', required: true },
   { id: 'fresh', label: 'Fresh Report', required: true },
   { id: 'loss', label: 'Known Loss Report', required: true },
-  { id: 'cost', label: 'Cost Watch', required: false },
 ];
 /** Tab ids from earlier builds, so shared links keep working. */
-const TAB_ALIASES: Record<string, TabId> = { shrink: 'loss', storeloss: 'loss', plu: 'cost' };
+const TAB_ALIASES: Record<string, TabId> = { shrink: 'loss', storeloss: 'loss', plu: 'itemcost', cost: 'itemcost' };
 
 export type TimeMode = 'todate' | 'rolling' | 'fiscal' | 'custom';
 export type ToDateOpt = 'day' | 'wtd' | 'ptd' | 'qtd' | 'ytd';
@@ -203,12 +202,6 @@ export function unusedFilters(tab: TabId): { time?: string; product?: string; sk
     return {
       stores: 'Recipes and ingredient costs are the same in every store, so Region, District and Store do not apply.',
       sku: 'Pick the PLU with the picker at the top of the view. Department and Category narrow the list.',
-    };
-  if (tab === 'cost')
-    return {
-      time: 'Cost Watch compares the cost in HQ with the PO cost of the last complete week (FY2026 W42), as of 10/18/2026.',
-      stores: 'Purchase orders and HQ costs are chain level.',
-      sku: 'Cost Watch ranks every item; click a row to open it in Item Cost Over Time.',
     };
   return {};
 }

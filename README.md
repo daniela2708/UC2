@@ -24,7 +24,7 @@ npm run lint       # zero warnings allowed
 
 The client-side password gate uses `VITE_ACCESS_PASSWORD` (default `BC2demo`). It only keeps casual visitors out of a demo; it is not security.
 
-The end-to-end check needs no extra packages: it drives a local Chrome or Chromium over the DevTools protocol (set `CHROME_PATH` if it is not in the usual place). It enters the password, then opens the cost change simulator from Category-Item Summary, Cost Watch and Item Cost Over Time and checks the item is prefilled. `BASE_URL=https://… node scripts/e2e.mjs` runs the same check against a deployed URL.
+The end-to-end check needs no extra packages: it drives a local Chrome or Chromium over the DevTools protocol (set `CHROME_PATH` if it is not in the usual place). It enters the password, then opens the cost change simulator from Category-Item Summary and Item Cost Over Time and checks the item is prefilled. `BASE_URL=https://… node scripts/e2e.mjs` runs the same check against a deployed URL.
 
 [DEMO.md](DEMO.md) has a 10-minute demo path.
 
@@ -36,7 +36,7 @@ The end-to-end check needs no extra packages: it drives a local Chrome or Chromi
 
 ## Views
 
-The tab bar starts with the five views the workbook requires. Cost Watch follows after a divider labelled *Additional views (proposed)* and carries a `Proposed` chip.
+The tab bar holds the five views the workbook requires.
 
 | View | What it answers | Drill-down |
 |---|---|---|
@@ -45,7 +45,6 @@ The tab bar starts with the five views the workbook requires. Cost Watch follows
 | **Ingredients View** | What does each ingredient add to a PLU's cost, and what happens when a base ingredient changes? | Ingredient table; "Where used" across every recipe |
 | **Fresh Report** | Which stores and districts are behind on fresh margin? | Region › District › Store Number |
 | **Known Loss Report** `Scope TBD` | Where does known loss come from, by item and store, and which entries should IT remove? | Department › Category › Item; one row per Store Num |
-| Cost Watch *(proposed)* | Where is the cost in Retalix HQ out of date, and what does it do to margin? | PO vs HQ cost; recipe PLUs by family and ingredient |
 
 **Known Loss Report scope (TBD).** The team agreed that shrink may become a separate use case. The Known Loss Report may move to a separate use case or a later wave; the MVP focuses on item cost and ingredient costing. The High Loss Flag remains a required KPI in Category-Item Summary.
 
@@ -69,7 +68,6 @@ Every filter in the workbook is available:
 A view greys out the filters it does not use, with a tooltip:
 - Fresh Report has no SKU filter.
 - Item Cost Over Time and Ingredients View are chain level (POs and recipes are the same in every store). The business filters narrow their pickers.
-- Cost Watch uses neither time nor store filters.
 
 The full state, including column choices and assumptions, lives in the URL query string, so any view can be shared by copying the address.
 
@@ -78,20 +76,19 @@ The full state, including column choices and assumptions, lives in the URL query
 Every large table has a **Columns** chooser with groups (Sales, Cost, Margin, Loss, Sell-through, YoY), presets, *Show all* and *Workbook default*. Presets:
 - Category-Item Summary: *Loss focus*.
 - Fresh Report: *Budget focus* and *Loss focus*.
-- Cost Watch: *Gap explained*.
 
 Every large table also has a sticky hierarchy column and a pinned Total row. **Export to Excel always includes every column.**
 
 | Proposed measure | Where |
 |---|---|
-| Period-based PO Cost / Unit (`Cost period: Week \| Fiscal period`) | Item Cost Over Time, Category-Item Summary, Cost Watch |
+| Period-based PO Cost / Unit (`Cost period: Week \| Fiscal period`) | Item Cost Over Time, Category-Item Summary |
 | Cost source switch `PO (real-time) \| HQ (current)` with the margin change in pts | Category-Item Summary (Pending validation) |
 | Cost type (UPC, PLU, Random weight), Cost reliability, purchase source chip | Item rows, Cost type filter |
 | Margin After Loss % with `Loss basis: Actual known loss \| Expected rate` and editable expected rates (0–30 %) | Category-Item Summary, Fresh Report |
 | Units shipped, Units sold, Sell-through %, Shipped value $ | Category-Item Summary, Fresh Report (column chooser) |
 | YoY and ID Stores YoY Gross / Net Sales growth | Column chooser and tile sub-lines |
-| Margin target bands (`src/data/targets.ts`) with a `Below target` chip | Category-Item Summary, Item Cost Over Time, Ingredients View, Cost Watch, simulator |
-| Cost change simulator and Where used (read-only, nothing is saved or sent) | Item rows, Item Cost Over Time, Cost Watch; Ingredients View |
+| Margin target bands (`src/data/targets.ts`) with a `Below target` chip | Category-Item Summary, Item Cost Over Time, Ingredients View, simulator |
+| Cost change simulator and Where used (read-only, nothing is saved or sent) | Item rows, Item Cost Over Time; Ingredients View |
 | Reason labels on the High Loss Flag, 26-week rule, `Excl. errors \| Incl. errors` | Flag rules popover, loss columns |
 | New items watch (first 12 weeks on sale) | Known Loss Report |
 
@@ -120,7 +117,7 @@ Every formula lives in `src/lib/kpis.ts` (pure, typed, null-guarded) and uses th
   - Threshold basis: at cost, assumed, Pending validation (open question 3).
   - "Likely entry error" and "High loss to review" are proposed secondary labels.
 - **Loss valuation:** every loss column says "at cost" or "at retail". Cost vs retail is Pending validation; the Recon Map points to KL1011 "Known Loss Retail $".
-- **Sign convention:** a cost increase is a margin loss. "Annual cost change +$X" reads with "Margin impact −$X", both red; the reverse is green. This applies in Where used, the simulator and Cost Watch.
+- **Sign convention:** a cost increase is a margin loss. "Annual cost change +$X" reads with "Margin impact −$X", both red; the reverse is green. This applies in Where used and the simulator.
 
 The **KPI definitions** modal lists each KPI with its business definition, calculation, legacy source, reconciliation target, the views that use it, workbook priority and status (Draft, Proposed, Pending validation). It ends with the open questions:
 1. Gross Sales source for the Fresh Report.
@@ -147,7 +144,7 @@ Everything is generated in the browser at startup from a fixed seed, **`20261018
 **Cost and purchases.**
 - **PLU and random-weight items:** bought from 1 to 3 vendors, with 2 to 3 deliveries a week. Stores reorder up to par in whole cases, so stock never runs out and slow seasonal items skip weeks. Each PO line has cases, a case pack (for example 25 lb for Roma tomatoes), a case cost and freight.
 - **HQ:** keeps one default cost per item, without freight, last updated 3 to 14 months ago.
-  - Most items cost more on POs than in HQ, partly because of freight (Cost Watch "of which freight").
+  - Most items cost more on POs than in HQ, partly because of freight (HQ excludes it).
   - About 27 % cost less, because HQ was set at a seasonal or commodity high.
 - **UPC items:** come from the Weis distribution center at their average cost.
 - **DSD items** (about 11 % of fresh items: mostly Bakery bread, rolls and bagels; also packaged Deli cheese, grocery bunches, bacon and hot dogs, bagged salads, sushi):
@@ -183,8 +180,8 @@ Horizon: FY2024 (starts Sun 12/31/2023) to FY2026 to date, as of **Sun 10/18/202
 | Story | Where to see it |
 |---|---|
 | **Roma tomatoes 25 lb case:** $19.95 normally; a glut drops it to $4.95 in FY2026 W35, a spike takes it to $44.95 in W36, and it is back to normal by W39. HQ holds $19.45. | Default item in Item Cost Over Time (Week and Fiscal period). |
-| **Pie pumpkin bins:** $150 per bin in HQ, $250 per bin on POs in season (W36–W42). | #1 in Cost Watch, PO vs HQ cost. |
-| **16 in. Pepperoni Pizza:** recipe last costed 03/2025 at $4.85. The same recipe at today's ingredient costs is $5.66 (box +32 %, dough +18 %, mozzarella and pepperoni +12 %), so margin is about 8 pts too high. | Default PLU in the Ingredients View; #1 in Cost Watch › Recipe PLUs. |
+| **Pie pumpkin bins:** $150 per bin in HQ, $250 per bin on POs in season (W36–W42). The largest gap between PO and HQ cost of any item. | Item Cost Over Time (pick Pie Pumpkins). |
+| **16 in. Pepperoni Pizza:** recipe last costed 03/2025 at $4.85. The same recipe at today's ingredient costs is $5.66 (box +32 %, dough +18 %, mozzarella and pepperoni +12 %), so margin is about 8 pts too high. | Default PLU in the Ingredients View; the largest recipe cost gap. |
 | **Where used:** pizza dough ball is in 13 PLUs. At $0.85 / lb instead of $0.70, the annual cost change is +$439K and the margin impact −$439K. | Ingredients View › Where used. |
 | **Deli soup:** store 116 sold 1 unit and scanned out 4,000 in FY2026 W40. It is a likely entry error (Known Loss Report scope TBD). | Known Loss Report (flagged entries, store table with the SKU); Report to IT and Export list for IT. |
 | **Salmon fat-finger:** store 152, W38, 1,110 lb instead of about 15 lb, worth $11,700. | Known Loss Report, flagged entries. |

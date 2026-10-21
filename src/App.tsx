@@ -8,7 +8,6 @@ import { Disclaimer, Header } from './components/Header';
 import { actions, FilterProvider, useFilters } from './lib/filterStore';
 import { CategoryItemView } from './views/CategoryItemView';
 import { FreshReportView } from './views/FreshReportView';
-import { CostWatchView } from './views/CostWatchView';
 import { ItemCostView } from './views/ItemCostView';
 import { IngredientsView } from './views/IngredientsView';
 import { KnownLossReportView } from './views/KnownLossReportView';
@@ -53,8 +52,6 @@ function Shell() {
         return <IngredientsView openDefinitions={openDefinitions} />;
       case 'loss':
         return <KnownLossReportView openDefinitions={openDefinitions} />;
-      case 'cost':
-        return <CostWatchView openDefinitions={openDefinitions} />;
       default:
         return <CategoryItemView openDefinitions={openDefinitions} />;
     }

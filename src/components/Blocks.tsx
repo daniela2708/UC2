@@ -162,13 +162,8 @@ export function BottomBar({ tab, onTab }: { tab: TabId; onTab: (t: TabId) => voi
   return (
     <div className="bottom-bar">
       <nav className="tabs" role="tablist" aria-label="Report pages" onKeyDown={onKey}>
-        {TABS.map((t, n) => (
+        {TABS.map((t) => (
           <Fragment key={t.id}>
-          {!t.required && TABS[n - 1]?.required && (
-            <span className="tab-divider" role="presentation">
-              Additional views (proposed)
-            </span>
-          )}
           <button
             id={`tab-${t.id}`}
             type="button"

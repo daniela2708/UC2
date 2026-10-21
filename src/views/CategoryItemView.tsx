@@ -550,7 +550,7 @@ export function CategoryItemView({ openDefinitions }: ViewProps) {
           </Banner>
         )}
         {staleCount > 0 && (
-          <Banner lead="Stale costs:" details={{ label: 'Open Cost Watch', onClick: () => update(actions.tab('cost')) }}>
+          <Banner lead="Stale costs:" details={{ label: 'Open Ingredients View', onClick: () => update(actions.tab('ingredients')) }}>
             {staleCount} Deli and Bakery composite PLUs in scope have recipe costs older than 6 months, so their margins are likely overstated.
           </Banner>
         )}
@@ -620,7 +620,7 @@ export function CategoryItemView({ openDefinitions }: ViewProps) {
           subtitle={`Where each sales dollar goes · ${range.label}`}
           legend={[
             { label: 'Totals', color: C.s1, kind: 'rect' },
-            { label: 'Reductions', color: C.s2, kind: 'rect' },
+            { label: 'Reductions', color: C.neg, kind: 'rect' },
           ]}
           table={{ head: ['Step', 'Amount'], rows: bridge.map((b) => [b.label, (b.kind === 'minus' ? '−' : '') + money(b.value)]) }}
         >
@@ -631,7 +631,7 @@ export function CategoryItemView({ openDefinitions }: ViewProps) {
           subtitle={`Each bubble is an item sized by gross sales; lines mark the scope average. Gross Margin Rate on ${baseWord}. Click a bubble to filter.`}
           legend={[
             { label: 'Items', color: C.s1, kind: 'dot' },
-            { label: 'High Loss Flag', color: C.s2, kind: 'dot' },
+            { label: 'High Loss Flag', color: C.neg, kind: 'dot' },
           ]}
           table={{
             head: ['Item', 'Gross Margin Rate', 'Loss % of sales', 'Total Gross Sales'],

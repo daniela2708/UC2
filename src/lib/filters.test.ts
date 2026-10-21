@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { formatDay, globalWeek, weekStartDay } from '../data/calendar';
 import { ITEMS } from '../data/products';
 import { DEFAULT_STATE, fromQuery, resolveTime, sanitizeSearch, searchItems, storeIndices, toQuery, BASE_TIME } from './filters';
-import { buildScope, findFlags, itemAggregates, pluRows, shrinkAggregates, storeCatLoss } from './selectors';
+import { buildScope, findFlags, itemAggregates, shrinkAggregates, storeCatLoss } from './selectors';
 
 const W42_TIME = { ...BASE_TIME, mode: 'fiscal' as const, grain: 'week' as const, weekStart: weekStartDay(globalWeek(2026, 42)) };
 
@@ -92,6 +92,6 @@ describe('empty selections', () => {
     expect(shrinkAggregates(scope).every((a) => a.loss === 0)).toBe(true);
     const noItems = buildScope({ ...DEFAULT_STATE, dept: 0, cat: 10 }, range);
     expect(noItems.items).toEqual([]);
-    expect(pluRows(noItems)).toEqual([]);
+    expect(itemAggregates(noItems, ['trade'])).toEqual([]);
   });
 });
