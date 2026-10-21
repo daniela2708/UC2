@@ -694,3 +694,14 @@ describe('realism of the cost stories', () => {
     }
   });
 });
+
+describe('ranking order (Top first | Bottom first)', () => {
+  it('top lists highest to lowest; bottom lists the lowest of the whole ranking, lowest first', async () => {
+    const { rankSlice } = await import('../components/Charts');
+    const rows = [3, -5, 10, 0, 7, -2].map((v) => ({ v }));
+    expect(rankSlice(rows, (r) => r.v, 'top').map((r) => r.v)).toEqual([10, 7, 3, 0, -2, -5]);
+    expect(rankSlice(rows, (r) => r.v, 'top', 2).map((r) => r.v)).toEqual([10, 7]);
+    expect(rankSlice(rows, (r) => r.v, 'bottom', 2).map((r) => r.v)).toEqual([-5, -2]);
+    expect(rows.map((r) => r.v)).toEqual([3, -5, 10, 0, 7, -2]);
+  });
+});

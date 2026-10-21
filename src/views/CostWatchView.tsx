@@ -4,7 +4,7 @@ import { COMPONENTS, COST_TYPE_LABEL, DEPTS, ingredientUnitCost, ITEMS } from '.
 import { recipeLines } from '../data/purchasing';
 import { belowTarget, catBand } from '../data/targets';
 import { Banner, KeyFigures, SectionHeading, type Tile } from '../components/Blocks';
-import { C, ChartCard, ChartGrid, hbarHeight, HBars, SERIES, TrendLines } from '../components/Charts';
+import { C, ChartCard, ChartGrid, hbarHeight, HBars, rankSlice, SERIES, TrendLines, type RankOrder } from '../components/Charts';
 import { HierTable, type HierCol, type HierRow } from '../components/HierTable';
 import { SimulateButton } from '../components/Simulator';
 import { CellBar, Impact, InfoTip, Segmented, StatusChip, Var } from '../components/ui';
@@ -58,6 +58,8 @@ function qtyText(qty: number, unit: string): string {
 export function CostWatchView({ openDefinitions }: ViewProps) {
   const { state, update, scope } = useScope();
   const [mode, setMode] = useState<'po' | 'recipe'>('po');
+  const [impactOrder, setImpactOrder] = useState<RankOrder>('top');
+  const [deptOrder, setDeptOrder] = useState<RankOrder>('top');
   const poRows = useMemo(() => costWatchRows(scope), [scope]);
   const recipeScope = useScope({ onlyDepts: COMPOSITE_DEPTS }).scope;
   const recipes = useMemo(() => pluRows(recipeScope), [recipeScope]);
@@ -239,7 +241,8 @@ export function CostWatchView({ openDefinitions }: ViewProps) {
         ];
 
   const signColor = (v: number) => (v < 0 ? C.neg : C.pos);
-  const impactBars = poRows.slice(0, 25).map((r) => ({
+  // Ranked by cost change (largest margin loss first); "Bottom first" shows the largest gains.
+  const impactBars = rankSlice(poRows, (r) => r.costChange, impactOrder, 25).map((r) => ({
     id: r.item,
     label: ITEMS[r.item].name,
     value: r.marginImpact,
@@ -251,7 +254,7 @@ export function CostWatchView({ openDefinitions }: ViewProps) {
       { label: 'HQ cost updated', value: r.hqUpdated },
     ],
   }));
-  const recipeBars = recipes.slice(0, 25).map((r) => ({
+  const recipeBars = rankSlice(recipes, (r) => r.costChange, impactOrder, 25).map((r) => ({
     id: r.item,
     label: ITEMS[r.item].name,
     value: r.marginImpact,
@@ -332,8 +335,11 @@ export function CostWatchView({ openDefinitions }: ViewProps) {
 
       <ChartGrid cols={2}>
         <ChartCard
-          title="Largest margin impact"
-          subtitle={mode === 'po' ? 'Top 25 items · last 4 weeks · margin impact = −(New PO Cost − HQ cost) × units' : 'Top 25 recipe PLUs · FY2026 to date · margin impact = −(today’s recipe − HQ recipe) × units'}
+          title="Margin impact ranking"
+          subtitle={`${impactOrder === 'top' ? 'Top 25 · largest margin loss first' : 'Bottom 25 · largest margin gain first'} · ${
+            mode === 'po' ? 'last 4 weeks · margin impact = −(New PO Cost − HQ cost) × units' : 'FY2026 to date · margin impact = −(today’s recipe − HQ recipe) × units'
+          }`}
+          rank={{ order: impactOrder, onChange: setImpactOrder }}
           legend={[
             { label: 'Margin loss (costs more than HQ)', color: C.neg, kind: 'rect' },
             { label: 'Margin gain (costs less than HQ)', color: C.pos, kind: 'rect' },
@@ -353,9 +359,10 @@ export function CostWatchView({ openDefinitions }: ViewProps) {
               { label: 'PO cost above HQ (margin loss)', color: C.neg, kind: 'rect' },
               { label: 'PO cost below HQ', color: C.pos, kind: 'rect' },
             ]}
-            table={{ head: ['Department', 'Cost gap'], rows: deptGaps(poRows).map((d) => [d.label, pctChange(d.value / 100)]) }}
+            rank={{ order: deptOrder, onChange: setDeptOrder }}
+            table={{ head: ['Department', 'Cost gap'], rows: rankSlice(deptGaps(poRows), (d) => d.value, deptOrder).map((d) => [d.label, pctChange(d.value / 100)]) }}
           >
-            <HBars data={deptGaps(poRows)} diverging labelWidth={80} format={(v) => `${v.toFixed(1)}%`} />
+            <HBars data={rankSlice(deptGaps(poRows), (d) => d.value, deptOrder)} diverging labelWidth={80} format={(v) => `${v.toFixed(1)}%`} />
           </ChartCard>
         ) : (
           topComp &&
@@ -419,6 +426,5 @@ function deptGaps(rows: ReturnType<typeof costWatchRows>) {
     acc.set(d, a);
   }
   return [...acc.entries()]
-    .map(([d, a]) => ({ id: d, label: DEPTS[d].name, value: (a.num / a.den - 1) * 100, color: a.num >= a.den ? C.neg : C.pos }))
-    .sort((a, b) => b.value - a.value);
+    .map(([d, a]) => ({ id: d, label: DEPTS[d].name, value: (a.num / a.den - 1) * 100, color: a.num >= a.den ? C.neg : C.pos }));
 }

@@ -1,5 +1,5 @@
 /* eslint-disable react-refresh/only-export-components -- chart palette constants live with the charts */
-import { BarChart3, Table2 } from 'lucide-react';
+import { ArrowDownWideNarrow, ArrowUpNarrowWide, BarChart3, Table2 } from 'lucide-react';
 import { ExportButton, nodeText } from './ExportButton';
 import { cloneElement, isValidElement, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
 import {
@@ -53,6 +53,17 @@ export interface ChartTable {
   rows: (string | number)[][];
 }
 
+export type RankOrder = 'top' | 'bottom';
+
+/**
+ * Ranking order for bar charts: sorts by `value` from highest to lowest and keeps the first `n` ("top"), or the
+ * lowest `n` from lowest up ("bottom").
+ */
+export function rankSlice<T>(rows: T[], value: (r: T) => number, order: RankOrder, n = rows.length): T[] {
+  const sorted = [...rows].sort((a, b) => value(b) - value(a));
+  return order === 'top' ? sorted.slice(0, n) : sorted.reverse().slice(0, n);
+}
+
 export function ChartCard({
   title,
   subtitle,
@@ -62,7 +73,10 @@ export function ChartCard({
   height = 240,
   contentHeight,
   className,
+  rank,
 }: {
+  /** Ranking charts: a Top first | Bottom first switch in the header. */
+  rank?: { order: RankOrder; onChange: (o: RankOrder) => void };
   /** Full height of the chart when it is taller than `height`; the body then scrolls. */
   contentHeight?: number;
   title: string;
@@ -81,8 +95,20 @@ export function ChartCard({
           <h3 className="chart-title">{title}</h3>
           {subtitle && <p className="chart-sub">{subtitle}</p>}
         </div>
-        {table && (
+        {(table || rank) && (
           <span className="chart-actions">
+          {rank && (
+            <span className="rank-toggle" role="group" aria-label="Ranking order">
+              {(['top', 'bottom'] as const).map((o) => (
+                <button key={o} type="button" className={`rank-btn${rank.order === o ? ' is-on' : ''}`} aria-pressed={rank.order === o} onClick={() => rank.onChange(o)}>
+                  {o === 'top' ? <ArrowDownWideNarrow size={13} aria-hidden="true" /> : <ArrowUpNarrowWide size={13} aria-hidden="true" />}
+                  {o === 'top' ? 'Top first' : 'Bottom first'}
+                </button>
+              ))}
+            </span>
+          )}
+          {table && (
+            <>
           <ExportButton
             fileName={title}
             getSheet={() => ({ title, subtitle: nodeText(subtitle), head: table.head, rows: table.rows.map((r) => r.map((c) => c)) })}
@@ -97,6 +123,8 @@ export function ChartCard({
             {asTable ? <BarChart3 size={14} aria-hidden="true" /> : <Table2 size={14} aria-hidden="true" />}
             {asTable ? 'Chart' : 'Table'}
           </button>
+            </>
+          )}
           </span>
         )}
       </header>

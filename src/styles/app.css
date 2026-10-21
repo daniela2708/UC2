@@ -2047,3 +2047,30 @@ b.pos {
   display: inline-flex;
   gap: 12px;
 }
+
+/* Ranking order switch (Top first | Bottom first) */
+.rank-toggle {
+  display: inline-flex;
+  border: 1px solid var(--n3);
+  border-radius: 999px;
+  overflow: hidden;
+}
+.rank-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  border: 0;
+  background: var(--white);
+  color: var(--n5);
+  font: inherit;
+  font-size: 12px;
+  padding: 3px 10px;
+  cursor: pointer;
+}
+.rank-btn + .rank-btn {
+  border-left: 1px solid var(--n3);
+}
+.rank-btn.is-on {
+  background: var(--dark);
+  color: var(--white);
+}

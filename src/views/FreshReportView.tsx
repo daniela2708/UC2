@@ -6,7 +6,7 @@ import { CATS, DEPTS } from '../data/products';
 import { DISTRICTS, REGIONS, STORES } from '../data/stores';
 import { Banner, BannerStack, KeyFigures, SectionHeading, type Tile } from '../components/Blocks';
 import { HierTable, type HierCol, type HierRow } from '../components/HierTable';
-import { C, ChartCard, ChartGrid, hbarHeight, HBars, TrendLines } from '../components/Charts';
+import { C, ChartCard, ChartGrid, hbarHeight, HBars, rankSlice, TrendLines, type RankOrder } from '../components/Charts';
 import { ExportButton } from '../components/ExportButton';
 import { LossBasisControl } from '../components/LossBasis';
 import { CellBar, InfoTip, Var } from '../components/ui';
@@ -134,6 +134,7 @@ const purchOf = (c: StoreWeekFresh) => totalPurchases(c.purchases);
 
 export function FreshReportView({ openDefinitions }: ViewProps) {
   const { state, update, range, scope } = useScope({ noItem: true });
+  const [districtOrder, setDistrictOrder] = useState<RankOrder>('top');
   const mb: MarginBase = state.marginBase;
   const depts = useMemo(() => (state.cat >= 0 ? [CATS[state.cat].dept] : state.dept >= 0 ? [state.dept] : DEPTS.map((d) => d.idx)), [state.cat, state.dept]);
   const [selected, setSelected] = useState<string>('total');
@@ -501,8 +502,8 @@ export function FreshReportView({ openDefinitions }: ViewProps) {
           { label: 'vs budget', value: pts(v) },
         ],
       };
-    })
-    .sort((a, b) => a.value - b.value);
+    });
+  const districtBars = rankSlice(districtGaps, (d) => d.value, districtOrder);
 
   const selPurch = selNode ? totalPurchases(selNode.purchases) : 0;
   const mixData = selNode
@@ -607,13 +608,14 @@ export function FreshReportView({ openDefinitions }: ViewProps) {
             { label: '▲ Above budget', color: C.pos, kind: 'rect' },
             { label: '▼ Below budget', color: C.neg, kind: 'rect' },
           ]}
-          subtitle={`Gross Margin Rate minus Budget GP %, ${rangeLabel} · click a district to filter`}
+          subtitle={`Gross Margin Rate minus Budget GP %, ${rangeLabel} · ${districtOrder === 'top' ? 'highest first' : 'lowest first'} · click a district to filter`}
           height={340}
-          contentHeight={hbarHeight(districtGaps.length)}
-          table={{ head: ['District', 'Gross Margin Rate', 'Budget GP %', 'vs Budget'], rows: districtGaps.map((d) => [d.label, pct(d.gp), pct(d.budget), pts(d.value)]) }}
+          contentHeight={hbarHeight(districtBars.length)}
+          rank={{ order: districtOrder, onChange: setDistrictOrder }}
+          table={{ head: ['District', 'Gross Margin Rate', 'Budget GP %', 'vs Budget'], rows: districtBars.map((d) => [d.label, pct(d.gp), pct(d.budget), pts(d.value)]) }}
         >
           <HBars
-            data={districtGaps}
+            data={districtBars}
             diverging
             arrows
             labelWidth={70}
