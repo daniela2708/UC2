@@ -35,7 +35,7 @@ export interface ItemSupply {
   freightRate: number;
   /** Weekdays (0 = Sun) with deliveries. */
   deliveryDays: number[];
-  /** Current PO Cost: the per-unit cost held in HQ / Retalix today. */
+  /** Current PO Cost: the per-unit cost held in Retalix HQ today. */
   hqCost: number;
   hqUpdatedDay: number;
   hqUpdatedLabel: string;
@@ -63,6 +63,15 @@ const VENDORS: Record<string, string[]> = {
   Floral: ['Mid-Atlantic Floral', 'Blue Mountain Growers'],
 };
 const DC = 'Weis Distribution Center';
+/** DSD vendors deliver straight to stores; receipts are recorded in Retalix HQ. */
+const DSD_VENDOR: Record<string, string> = {
+  Meat: 'Valley Smokehouse (DSD)',
+  Produce: 'Fresh Leaf Farms (DSD)',
+  Deli: 'Keystone Cheese Co. (DSD)',
+  Bakery: 'Hometown Bread Co. (DSD)',
+  Seafood: 'Sushi partner (DSD)',
+  Floral: 'Blue Mountain Growers (DSD)',
+};
 
 /** Typical case packs (selling units per case) by department, for lb and ea items. */
 const PACK_LB = [[10, 15, 20, 40], [20, 25, 40, 40], [10, 12, 20], [10, 20], [10, 10, 25], [10, 20]];
@@ -120,7 +129,12 @@ export function supplyOf(i: number): ItemSupply {
   let casePack: number;
   let caseLabel: string;
   let freightRate: number;
-  if (it.costType === 'UPC') {
+  if (it.dsd) {
+    vendors = [{ name: DSD_VENDOR[deptName], share: 1, factor: 1 }];
+    casePack = 1;
+    caseLabel = 'DSD receipt';
+    freightRate = 0;
+  } else if (it.costType === 'UPC') {
     vendors = [{ name: DC, share: 1, factor: 1 }];
     const packs = PACK_EA[it.dept];
     casePack = packs[Math.floor(hash01(i, 701) * packs.length)];
@@ -228,7 +242,8 @@ function unitsUsed(i: number, day: number): number {
  */
 function forEachOrder(i: number, cb: (o: PurchaseOrder) => void): void {
   const it = ITEMS[i];
-  if (it.composite) return;
+  // Composite PLUs are made in store; DSD items are received in Retalix HQ, not ordered in Biceps.
+  if (it.composite || it.dsd) return;
   const sup = supplyOf(i);
   const main = sup.vendors.reduce((best, v, k) => (v.share > sup.vendors[best].share ? k : best), 0);
   // Opening stock: one week of use.
@@ -325,6 +340,7 @@ export interface NewPoCost {
 export function newPoCostInfo(i: number, endWeek = LAST_COMPLETE_WEEK): NewPoCost {
   const it = ITEMS[i];
   if (it.composite) return { cost: recipeCostAt(it.composite, endWeek), week: endWeek };
+  if (it.dsd) return { cost: poUnitCostWeek(i, endWeek), week: endWeek };
   for (let w = endWeek; w >= Math.max(0, endWeek - 52); w--) {
     const c = poCostForDays(i, w * 7, w * 7 + 6);
     if (c !== null) return { cost: c, week: w };
@@ -336,7 +352,7 @@ export function newPoCost(i: number, endWeek = LAST_COMPLETE_WEEK): number | nul
   return newPoCostInfo(i, endWeek).cost;
 }
 
-/** Current PO Cost: the per-unit cost held in HQ / Retalix. */
+/** Current PO Cost: the per-unit cost held in Retalix HQ. */
 export function currentPoCost(i: number): number {
   return supplyOf(i).hqCost;
 }
@@ -366,7 +382,7 @@ export interface CostPoint {
  * PO Cost / Unit and volume purchased by fiscal week or fiscal period over the weeks [w0, w1].
  * Composite PLUs: recipe cost weighted by units produced.
  */
-export function costSeries(i: number, w0: number, w1: number, grain: CostPeriod = 'week'): CostPoint[] {
+export function costSeries(i: number, w0: number, w1: number, grain: CostPeriod = 'week', dsdReceipt?: (w: number) => number): CostPoint[] {
   const it = ITEMS[i];
   const m = getModel();
   const buckets: { w0: number; w1: number }[] = [];
@@ -385,7 +401,15 @@ export function costSeries(i: number, w0: number, w1: number, grain: CostPeriod 
   return buckets.map((b) => {
     let spend = 0;
     let units = 0;
-    if (it.composite) {
+    if (it.dsd) {
+      // DSD items: receipts recorded in Retalix HQ, at the receipt cost.
+      for (let w = b.w0; w <= b.w1; w++) {
+        const r = dsdReceipt ? dsdReceipt(w) : 0;
+        const c = poUnitCostWeek(i, w);
+        spend += r;
+        units += c > 0 ? r / c : 0;
+      }
+    } else if (it.composite) {
       for (let w = b.w0; w <= b.w1; w++) {
         const pc = m.poCost[i * NW + w];
         const u = m.units[i * NW + w] + (pc > 0 ? m.lossCost[i * NW + w] / pc : 0);
@@ -463,7 +487,7 @@ let hqWeekly: Float32Array | null = null;
  * Weekly unit cost by source, for every item:
  * - PO (real-time): the week's period-based PO cost (PO spend ÷ volume purchased). A week without purchases
  *   carries the most recent PO cost forward, and `poCostFromWeek` says which week it came from.
- * - HQ: the default cost in HQ / Retalix in force that week (last update on or before the week, no freight).
+ * - HQ: the default cost in Retalix HQ in force that week (last update on or before the week, no freight).
  * UPC items use the average cost for both; composite PLUs use the recipe (that week's ingredients vs the Excel standard).
  */
 function buildWeekly(): void {
@@ -483,6 +507,12 @@ function buildWeekly(): void {
       from[k] = w;
       if (it.costType === 'UPC') {
         po[k] = hq[k] = m.poCost[k];
+        continue;
+      }
+      if (it.dsd) {
+        // DSD receipt cost in Retalix HQ: the vendor's delivered cost that week (no separate freight).
+        po[k] = m.poCost[k];
+        hq[k] = weekHq(sup, hqWeek, w);
         continue;
       }
       if (it.composite) {
@@ -511,15 +541,19 @@ function buildWeekly(): void {
         });
         po[k] = landed;
       }
-      // HQ is refreshed about once a year: the value in force is the last update on or before this week.
-      let hu = hqWeek;
-      while (hu > w) hu -= 52;
-      hq[k] = hu === hqWeek ? sup.hqCost : sup.hqCost * Math.pow(0.97, (hqWeek - hu) / 52);
+      hq[k] = weekHq(sup, hqWeek, w);
     }
   }
   poWeekly = po;
   poFrom = from;
   hqWeekly = hq;
+}
+
+/** HQ is refreshed about once a year: the value in force is the last update on or before week `w`. */
+function weekHq(sup: ItemSupply, hqWeek: number, w: number): number {
+  let hu = hqWeek;
+  while (hu > w) hu -= 52;
+  return hu === hqWeek ? sup.hqCost : sup.hqCost * Math.pow(0.97, (hqWeek - hu) / 52);
 }
 
 export function poUnitCostWeek(i: number, w: number): number {

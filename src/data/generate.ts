@@ -689,13 +689,21 @@ const BUDGET_GP = [0.292, 0.361, 0.427, 0.513, 0.278, 0.4];
 const SEAFOOD_SQUEEZE_WHSE = 0.026;
 
 /** Purchases by channel as fractions of the department-store-week's sales. */
+/** DSD purchases as a fraction of the department-store-week's sales (the same value purchaseFractions uses). */
+export function dsdFraction(d: number, s: number, w: number): number {
+  const st = STORES[s];
+  const o = PLANTED.storeOutlier;
+  if (st.id === o.store && DEPTS[d].name === o.dept && w >= o.fromWeek && w <= o.toWeek) return o.dsdShare;
+  return PURCHASE_BASE.dsd[d] * (1 + 0.15 * hashNormal(d, st.id, w, 403));
+}
+
 export function purchaseFractions(d: number, s: number, w: number, out: PurchaseBreakdown): PurchaseBreakdown {
   const st = STORES[s];
   const n = (salt: number) => hashNormal(d, st.id, w, salt);
   // District execution differs (shrink control, mix, DSD reliance), so some districts beat budget and others miss it.
   const dist = Number(st.district.slice(1));
   out.whse = PURCHASE_BASE.whse[d] + 0.011 + 0.014 * hashNormal(dist, 399) + 0.01 * hashNormal(d, dist, 400) + 0.008 * hashNormal(d, st.id, 401) + 0.004 * n(402);
-  out.dsd = PURCHASE_BASE.dsd[d] * (1 + 0.15 * n(403));
+  out.dsd = dsdFraction(d, s, w);
   out.packaging = PURCHASE_BASE.packaging[d] * (1 + 0.1 * n(404));
   out.reclaim = PURCHASE_BASE.reclaim[d] * (1 + 0.5 * hash01(d, st.id, w, 405));
   out.transfers = 0.004 * n(406);
@@ -706,7 +714,6 @@ export function purchaseFractions(d: number, s: number, w: number, out: Purchase
   if (d === 4 && w >= PLANTED.shrimpSqueeze.fromWeek) out.whse += SEAFOOD_SQUEEZE_WHSE;
   const o = PLANTED.storeOutlier;
   if (st.id === o.store && DEPTS[d].name === o.dept && w >= o.fromWeek && w <= o.toWeek) {
-    out.dsd = o.dsdShare;
     out.whse = PURCHASE_BASE.whse[d] + 0.011 + o.whseLift;
     out.inTransit = 0;
     out.transfers = 0;

@@ -84,6 +84,8 @@ export interface Item {
   costType: CostType;
   /** First week on sale (global week), for items launched during the horizon. */
   launchWeek?: number;
+  /** Received through DSD (direct store delivery), recorded item by item in Retalix HQ; no Biceps PO. */
+  dsd?: boolean;
   composite?: Composite;
 }
 
@@ -491,6 +493,36 @@ for (const x of EXTRA_ITEMS) {
   }
   ITEMS.push(item);
   sub.items.push(item.idx);
+}
+
+/**
+ * DSD items: vendors deliver straight to stores and receipts are recorded item by item in Retalix HQ. Picked in
+ * subcategories where DSD is usual (bread, packaged cheese, grocery bunches, bacon and hot dogs, bagged
+ * salads, sushi), best sellers first, until their cost of goods covers the department's DSD purchases share.
+ */
+const DSD_SUBS: Record<string, string[]> = {
+  Bakery: ['Breads', 'Rolls', 'Bagels & English muffins'],
+  Deli: ['Sliced cheese', 'Specialty cheese'],
+  Floral: ['Grocery bunches'],
+  Meat: ['Bacon', 'Hot dogs & smoked sausage'],
+  Produce: ['Bagged greens', 'Salad kits'],
+  Seafood: ['Rolls'],
+};
+/** DSD purchases as a share of department sales (Fresh Report), over the cost-to-sales ratio. */
+const DSD_COST_SHARE: Record<string, number> = { Meat: 0.045, Produce: 0.1, Deli: 0.16, Bakery: 0.36, Seafood: 0.07, Floral: 0.15 };
+
+for (const dept of DEPTS) {
+  const subs = DSD_SUBS[dept.name] ?? [];
+  const inDept = ITEMS.filter((it) => it.dept === dept.idx && it.launchWeek === undefined);
+  const costW = (it: Item) => it.weight * (1 - it.margin);
+  const target = DSD_COST_SHARE[dept.name] * inDept.reduce((a, it) => a + costW(it), 0);
+  const candidates = inDept.filter((it) => !it.composite && subs.includes(SUBS[it.sub].name)).sort((a, b) => b.weight - a.weight);
+  let acc = 0;
+  for (const it of candidates) {
+    if (acc >= target) break;
+    it.dsd = true;
+    acc += costW(it);
+  }
 }
 
 export const ITEM_BY_NAME = new Map(ITEMS.map((it) => [it.name, it]));

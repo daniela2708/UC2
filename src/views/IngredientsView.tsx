@@ -265,7 +265,7 @@ function IngredientsBody({
               Reset
             </button>
           )}
-          <InfoTip text={`Above $0 and up to 10× today's cost (${unitCost(todayCost * 10)} / ${unit}). Read-only: nothing is saved.`} />
+          <InfoTip text={`Above $0 and up to 10× today's cost (${unitCost(todayCost * 10)} / ${unit}). Read-only: nothing is saved or sent to Retalix HQ.`} />
           <span className="filter-spacer" />
           <span className="toggle-label impact-pair">
             Annual cost change <Impact value={costChange} kind="cost" compact />

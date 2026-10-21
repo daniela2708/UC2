@@ -20,6 +20,10 @@ import { HIGH_LOSS_FLAG_TIP, lossPctOfSales, totalLoss, type LossBasis } from '.
 import { addAgg, emptyAgg, findFlags, isEntryError, itemAggregates, newItemsWatch, storeKnownLoss, type Agg, type FlagHit } from '../lib/selectors';
 import { extremeInScope, incompleteStores, lossBasisWord, lossTitle, useScope, ViewToggles, type ViewProps } from './common';
 
+/** Agreed in the technical session: shrink may become its own use case. */
+const KL_SCOPE_NOTE =
+  'May move to a separate use case or a later wave; the MVP focuses on item cost and ingredient costing. The High Loss Flag remains a required KPI in Category-Item Summary.';
+
 function volCell(ea: number, lb: number): ReactNode {
   if (lb === 0) return volume(ea, 'ea');
   if (ea === 0) return volume(lb, 'lb');
@@ -214,7 +218,16 @@ export function KnownLossReportView({ openDefinitions }: ViewProps) {
 
   return (
     <>
-      <SectionHeading eyebrow="Known loss · KL1011" title="Known Loss Report" question="Where does known loss come from, by item and by store, and which entries should IT remove?">
+      <SectionHeading
+        eyebrow="Known loss · KL1011"
+        title="Known Loss Report"
+        badge={
+          <span className="chip status-pending" title={KL_SCOPE_NOTE}>
+            Scope TBD
+          </span>
+        }
+        question="Where does known loss come from, by item and by store, and which entries should IT remove?"
+      >
         {describeProductScope(state)}, {describeStoreScope(state)}, {weeklyRange}: Known Loss <b>{moneyCompact(lossShown)}</b> {basisWord} on <b>{moneyCompact(total.gross)}</b> of sales, with{' '}
         <b>{count(flags.length)}</b> High Loss Flag{flags.length === 1 ? '' : 's'} (weekly loss above $1,000)
         {largest && (
@@ -224,6 +237,10 @@ export function KnownLossReportView({ openDefinitions }: ViewProps) {
         )}
         .
       </SectionHeading>
+
+      <Banner kind="note" lead="Scope TBD:">
+        {KL_SCOPE_NOTE}
+      </Banner>
 
       <BannerStack>
         {extreme && (

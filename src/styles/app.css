@@ -2104,3 +2104,14 @@ b.pos {
   align-items: flex-end;
   margin: 0;
 }
+
+/* Chip next to a section title */
+.title-badge {
+  display: inline-flex;
+  vertical-align: middle;
+  margin-left: 12px;
+}
+.title-badge .chip {
+  font-size: 12px;
+  letter-spacing: 0;
+}

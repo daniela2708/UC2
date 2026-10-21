@@ -21,6 +21,7 @@ import {
   NW,
   periodWeeksOf,
   purchaseFractions,
+  dsdFraction,
   RETAIL_LOSS_FACTOR,
   type LossEvent,
   type Model,
@@ -340,6 +341,7 @@ export interface Agg {
   srcPo: number;
   srcBill: number;
   srcRecipe: number;
+  srcDsd: number;
 }
 
 export function emptyAgg(): Agg {
@@ -385,6 +387,7 @@ export function emptyAgg(): Agg {
     srcPo: 0,
     srcBill: 0,
     srcRecipe: 0,
+    srcDsd: 0,
   };
 }
 
@@ -406,10 +409,10 @@ export interface ItemAgg extends Agg {
 }
 
 /** Where an item's Total Purchases come from. */
-export type PurchaseSource = 'Biceps PO' | 'Warehouse bill-out' | 'Recipe';
+export type PurchaseSource = 'Biceps PO' | 'Warehouse bill-out' | 'Recipe' | 'DSD receipt (HQ)';
 export function purchaseSource(i: number): PurchaseSource {
   const it = ITEMS[i];
-  return it.composite ? 'Recipe' : it.costType === 'UPC' ? 'Warehouse bill-out' : 'Biceps PO';
+  return it.dsd ? 'DSD receipt (HQ)' : it.composite ? 'Recipe' : it.costType === 'UPC' ? 'Warehouse bill-out' : 'Biceps PO';
 }
 
 /**
@@ -517,7 +520,10 @@ export function itemAggregates(scope: Scope, costBasis: readonly CostElement[], 
             // Total Purchases and volume purchased for the store set (chain POs × the stores' share of the category).
             let purch: number;
             let purchUnits: number;
-            if (it.composite) {
+            if (it.dsd) {
+              purch = wk <= LAST_COMPLETE_WEEK ? dsdReceipts(scope, lw0, lw1).get(i)![wk] * frac : 0;
+              purchUnits = poUnit > 0 ? purch / poUnit : 0;
+            } else if (it.composite) {
               purchUnits = units + lu;
               purch = purchUnits * poUnit;
             } else {
@@ -525,8 +531,9 @@ export function itemAggregates(scope: Scope, costBasis: readonly CostElement[], 
               purch = t.spend * f;
               purchUnits = t.units * f;
             }
-            const poNum = it.composite || it.costType === 'UPC' ? units * poUnit : purch;
-            const poDen = it.composite || it.costType === 'UPC' ? units : purchUnits;
+            const fromReceipts = it.dsd || !(it.composite || it.costType === 'UPC');
+            const poNum = fromReceipts ? purch : units * poUnit;
+            const poDen = fromReceipts ? purchUnits : units;
             const ship = wk <= LAST_COMPLETE_WEEK ? itemPurchasesWeek(Rw, i, wk) * frac : 0;
             const shipUnits = poUnit > 0 ? ship / poUnit : 0;
             a.shipVal += ship;
@@ -568,7 +575,8 @@ export function itemAggregates(scope: Scope, costBasis: readonly CostElement[], 
       run(false);
       if (r.lyAvailable) run(true);
       const src = purchaseSource(i);
-      if (src === 'Recipe') a.srcRecipe = 1;
+      if (src === 'DSD receipt (HQ)') a.srcDsd = 1;
+      else if (src === 'Recipe') a.srcRecipe = 1;
       else if (src === 'Warehouse bill-out') a.srcBill = 1;
       else a.srcPo = 1;
       const nf = flagCount.get(i) ?? 0;
@@ -689,7 +697,8 @@ function catWeekNetUnits(scope: Scope): Float64Array[] {
  * Department purchases for one store-week, by channel (the Fresh Report). Stores buy ahead of selling:
  * part of this week's buying is for next week's sales, with uneven deliveries. Returns the department's sales.
  */
-function deptStoreWeek(m: Model, cs: Float64Array, d: number, s: number, w: number, fr: PurchaseBreakdown, out: PurchaseBreakdown): number {
+/** Department sales for one store-week and the purchases it drives before channel fractions (buying ahead, timing). */
+function deptStoreTimed(m: Model, cs: Float64Array, d: number, s: number, w: number): { ds: number; timed: number } {
   let ds = 0;
   let next = 0;
   // The in-progress week is not known yet, so next week's sales repeat this week's.
@@ -700,14 +709,19 @@ function deptStoreWeek(m: Model, cs: Float64Array, d: number, s: number, w: numb
   }
   ds += deptSalesAdj(m, d, s, w, null).g;
   next += deptSalesAdj(m, d, s, wn, null).g;
+  if (ds <= 0) return { ds: 0, timed: 0 };
+  // Pre-holiday stocking is capped by backroom and cooler space: 1.8× this week's sales, 3.2× for Floral (Valentine's, Mother's Day).
+  const cap = DEPTS[d].name === 'Floral' ? 3.2 : 1.8;
+  return { ds, timed: ((1 - PURCHASE_LEAD) * ds + PURCHASE_LEAD * Math.min(next, ds * cap)) * purchaseTiming(d, s, w) };
+}
+
+function deptStoreWeek(m: Model, cs: Float64Array, d: number, s: number, w: number, fr: PurchaseBreakdown, out: PurchaseBreakdown): number {
+  const { ds, timed } = deptStoreTimed(m, cs, d, s, w);
   if (ds <= 0) {
     for (const ch of PURCHASE_CHANNELS) out[ch] = 0;
     return 0;
   }
   purchaseFractions(d, s, w, fr);
-  // Pre-holiday stocking is capped by backroom and cooler space: 1.8× this week's sales, 3.2× for Floral (Valentine's, Mother's Day).
-  const cap = DEPTS[d].name === 'Floral' ? 3.2 : 1.8;
-  const timed = ((1 - PURCHASE_LEAD) * ds + PURCHASE_LEAD * Math.min(next, ds * cap)) * purchaseTiming(d, s, w);
   for (const ch of PURCHASE_CHANNELS) out[ch] = (ch === 'scanCredit' || ch === 'wcCredit' ? ds : timed) * fr[ch];
   return ds;
 }
@@ -796,6 +810,56 @@ export function freshStoreWeeks(scope: Scope, depts: number[], weeks: number[]):
     }
     return out;
   });
+}
+
+const dsdCache = new Map<string, Map<number, Float64Array>>();
+
+/**
+ * DSD receipts (Retalix HQ) by item and week for the store set. Each department-store-week's DSD purchases (the
+ * Fresh Report DSD line) are split across the department's DSD items by their cost of goods sold in that store,
+ * so a department's DSD items add up exactly to its Fresh Report DSD purchases.
+ */
+export function dsdReceipts(scope: Scope, w0: number, w1: number): Map<number, Float64Array> {
+  const key = `${scope.storeKey}#${w0}-${w1}`;
+  return memo(dsdCache, key, () => {
+    const m = getModel();
+    const csAll = catWeekSales(null);
+    const out = new Map<number, Float64Array>();
+    const byDept = DEPTS.map((d) => ITEMS.filter((it) => it.dsd && it.dept === d.idx).map((it) => it.idx));
+    for (const list of byDept) for (const i of list) out.set(i, new Float64Array(NW));
+    for (let w = Math.max(0, w0); w <= Math.min(w1, LAST_COMPLETE_WEEK); w++) {
+      byDept.forEach((list, d) => {
+        if (!list.length) return;
+        const cats = [...new Set(list.map((i) => ITEMS[i].cat))];
+        const catOf = list.map((i) => cats.indexOf(ITEMS[i].cat));
+        const chain = list.map((i) => m.units[i * NW + w] * poUnitCostWeek(i, w));
+        const unitCost = list.map((i) => poUnitCostWeek(i, w));
+        const adj = list.map((i) => m.salesAdjIndex.get(i * NW + w));
+        const chainTot = chain.reduce((x, y) => x + y, 0);
+        const f = new Float64Array(cats.length);
+        const wts = new Float64Array(list.length);
+        for (const s of scope.stores) {
+          const { ds, timed } = deptStoreTimed(m, csAll, d, s, w);
+          if (ds <= 0) continue;
+          const dsd = timed * dsdFraction(d, s, w);
+          for (let c = 0; c < cats.length; c++) f[c] = storeShare(m, cats[c], s, w)[0];
+          let tot = 0;
+          for (let k = 0; k < list.length; k++) {
+            const a = adj[k];
+            const v = a ? Math.max(0, chain[k] * f[catOf[k]] + a.units[s] * unitCost[k]) : chain[k] * f[catOf[k]];
+            wts[k] = v;
+            tot += v;
+          }
+          // A store that sold none of them that week still receives: split by the chain's mix, or evenly.
+          for (let k = 0; k < list.length; k++) {
+            const share = tot > 0 ? wts[k] / tot : chainTot > 0 ? chain[k] / chainTot : 1 / list.length;
+            out.get(list[k])![w] += dsd * share;
+          }
+        }
+      });
+    }
+    return out;
+  }, 12);
 }
 
 /** Delivery days and their share of a store-department's weekly purchases (2–3 deliveries a week). */

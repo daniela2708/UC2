@@ -59,7 +59,7 @@ function itemColumns(idStores: boolean, basis: LossBasis): HierCol[] {
       key: 'purch',
       label: 'Total Purchases',
       title:
-        'PO cost spent (Biceps PO cost × volume). UPC: warehouse bill-out, shipments to stores used as a proxy for purchases. Composite PLUs: production cost (recipe) = units produced (sold + known loss) × recipe cost; unknown loss not included. Store filters take the stores’ share of the category.',
+        'PO cost spent (Biceps PO cost × volume). UPC: warehouse bill-out, shipments to stores used as a proxy for purchases. Composite PLUs: production cost (recipe) = units produced (sold + known loss) × recipe cost; unknown loss not included. DSD items: DSD receipts recorded in Retalix HQ, which add up to the department’s Fresh Report DSD purchases. Store filters take the stores’ share of the category.',
       group: 'Cost',
     },
     {
@@ -152,6 +152,8 @@ const SOURCE_TIP: Record<PurchaseSource, string> = {
   'Biceps PO': 'PO cost spent, from PO cost and volume in Biceps.',
   'Warehouse bill-out': 'Bill-out is shipments to stores from the Weis distribution center, used as a proxy for purchases (UPC items have no Biceps PO).',
   Recipe: 'Production cost (recipe): units produced (sold + known loss) × recipe cost. Unknown loss is not included.',
+  'DSD receipt (HQ)':
+    'Received through DSD (direct store delivery) and recorded item by item in Retalix HQ, at the receipt cost. DSD items add up to the department’s DSD purchases in the Fresh Report.',
 };
 
 function signedMoney(v: number | null): string {
@@ -176,7 +178,12 @@ function aggCells(
   const arpu = perUnit(a, a.grossEa, a.grossLb);
   const pcpu = perUnit(a, a.purchEa, a.purchLb, a.purchUnitsEa, a.purchUnitsLb);
   const po = perUnit(a, a.poEa, a.poLb, a.poUnitsEa, a.poUnitsLb);
-  const sources = [a.srcPo ? `${count(a.srcPo)} Biceps PO` : '', a.srcBill ? `${count(a.srcBill)} warehouse bill-out` : '', a.srcRecipe ? `${count(a.srcRecipe)} recipe` : ''].filter(Boolean);
+  const sources = [
+    a.srcPo ? `${count(a.srcPo)} Biceps PO` : '',
+    a.srcBill ? `${count(a.srcBill)} warehouse bill-out` : '',
+    a.srcRecipe ? `${count(a.srcRecipe)} recipe` : '',
+    a.srcDsd ? `${count(a.srcDsd)} DSD receipt (HQ)` : '',
+  ].filter(Boolean);
   const purchCell =
     o.source ? (
       <>
@@ -448,11 +455,19 @@ export function CategoryItemView({ openDefinitions }: ViewProps) {
     },
     {
       label: 'Total Purchases',
-      info: 'PO cost spent (Biceps). UPC: warehouse bill-out (shipments to stores, a proxy for purchases). Composite PLUs: production cost (recipe), unknown loss not included.',
+      info: 'PO cost spent (Biceps). UPC: warehouse bill-out (shipments to stores, a proxy for purchases). Composite PLUs: production cost (recipe), unknown loss not included. DSD items: receipts recorded in Retalix HQ.',
       value: moneyCompact(total.purch),
       sub: (() => {
-        const n = [total.srcPo, total.srcBill, total.srcRecipe].filter((x) => x > 0).length;
-        return n > 1 ? 'Mixed sources: Biceps PO, bill-out, recipe' : total.srcRecipe ? 'Production cost (recipe)' : total.srcBill ? 'Warehouse bill-out' : 'Biceps PO';
+        const n = [total.srcPo, total.srcBill, total.srcRecipe, total.srcDsd].filter((x) => x > 0).length;
+        return n > 1
+          ? 'Mixed sources: Biceps PO, bill-out, recipe, DSD'
+          : total.srcRecipe
+            ? 'Production cost (recipe)'
+            : total.srcBill
+              ? 'Warehouse bill-out'
+              : total.srcDsd
+                ? 'DSD receipt (HQ)'
+                : 'Biceps PO';
       })(),
     },
     {
@@ -560,7 +575,7 @@ export function CategoryItemView({ openDefinitions }: ViewProps) {
             ]}
           />
           <StatusChip status="Pending validation" />
-          <InfoTip text="PLU and random-weight items: PO = real-time cost from purchase orders (Biceps), freight included; HQ = the default cost in HQ / Retalix. UPC items always use the HQ average cost, which already works. Biceps access is an open question." />
+          <InfoTip text="PLU and random-weight items: PO = real-time cost from purchase orders (Biceps), freight included; HQ = the default cost in Retalix HQ, Weis’s back-office system. UPC items always use the HQ average cost, which already works. Biceps access is an open question." />
           <span className="flip-delta">
             On {state.costSource === 'po' ? 'HQ' : 'PO'} cost: {pct(altGmr)} (<Var value={pointsDiff(altGmr, gmr)} />)
           </span>

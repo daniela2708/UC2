@@ -4,7 +4,7 @@ A clickable prototype of Use Case 2, Profitability Tracking, for Weis Markets fr
 
 The requirements workbook is the source of truth for view names, KPI names, formulas and filters. The business interviews (Weis IT, Produce and Deli category managers) set the focus: **the problem is cost, not loss**.
 - Produce's true cost lives in purchase orders in Biceps.
-- Deli composite PLU costs are typed into Retalix from Excel about once a year.
+- Deli composite PLU costs are typed into Retalix HQ (Weis's back-office system, "HQ" for short below) from Excel about once a year.
 - UPC average cost already works.
 
 BCG named two MVP priorities, and the prototype shows both: ingredient cost flowing through recipes (Ingredients View) and period-based PO cost (Item Cost Over Time).
@@ -44,8 +44,10 @@ The tab bar starts with the five views the workbook requires. Cost Watch follows
 | **Item Cost Over Time** | What does this item really cost us, and since when? One SKU at a time. | PO cost by week or fiscal period; purchase order lines |
 | **Ingredients View** | What does each ingredient add to a PLU's cost, and what happens when a base ingredient changes? | Ingredient table; "Where used" across every recipe |
 | **Fresh Report** | Which stores and districts are behind on fresh margin? | Region › District › Store Number |
-| **Known Loss Report** | Where does known loss come from, by item and store, and which entries should IT remove? | Department › Category › Item; one row per Store Num |
-| Cost Watch *(proposed)* | Where is the cost in HQ out of date, and what does it do to margin? | PO vs HQ cost; recipe PLUs by family and ingredient |
+| **Known Loss Report** `Scope TBD` | Where does known loss come from, by item and store, and which entries should IT remove? | Department › Category › Item; one row per Store Num |
+| Cost Watch *(proposed)* | Where is the cost in Retalix HQ out of date, and what does it do to margin? | PO vs HQ cost; recipe PLUs by family and ingredient |
+
+**Known Loss Report scope (TBD).** The team agreed that shrink may become a separate use case. The Known Loss Report may move to a separate use case or a later wave; the MVP focuses on item cost and ingredient costing. The High Loss Flag remains a required KPI in Category-Item Summary.
 
 ### How each user story is satisfied
 
@@ -98,15 +100,16 @@ Every large table also has a sticky hierarchy column and a pinned Total row. **E
 Every formula lives in `src/lib/kpis.ts` (pure, typed, null-guarded) and uses the workbook names everywhere: tiles, headers, the definitions drawer and exports. All rates are ratios of totals, and a zero or missing denominator shows `—`. Volume never adds `ea` and `lb`; per-unit values at aggregate rows show one line per unit of measure.
 
 - **Gross Margin Rate** = SUM(Gross Margin) ÷ SUM(**Gross Sales**). A `Margin on: Gross Sales | Net Sales` toggle offers Net Sales as a proposed option.
-- **Total Purchases** is PO cost spent (Biceps), with three sources:
+- **Total Purchases** is PO cost spent (Biceps), with these sources:
   - **Warehouse bill-out** for UPC items: shipments to stores, used as a proxy for purchases.
   - **Production cost (recipe)** for composite PLUs: units produced × recipe cost; unknown loss is not included.
+  - **DSD receipt (HQ)** for items received through direct store delivery and recorded item by item in Retalix HQ. DSD items add up exactly to each department's DSD purchases in the Fresh Report, by store and week.
   - **Fresh Report purchases**: the Fresh Report keeps its own store-level purchase channels. These are a different measure.
 - **Purchase Cost per Unit** = SUM(Total Purchases) ÷ SUM(volume purchased).
 - **PO Cost / Unit:**
   - **Period-based:** PO spend in the period ÷ volume purchased in the period. A period without purchases is a gap; margins then carry the latest PO cost and say so ("cost from W38").
   - It equals Purchase Cost per Unit for PLU and random-weight items (open question 5).
-  - **Current PO Cost** is the cost in HQ / Retalix.
+  - **Current PO Cost** is the cost in Retalix HQ.
   - **New PO Cost** is the last complete week's PO cost ("as of W41" when that week had no purchases).
 - **Fresh Report Gross Margin** is gross profit: Gross Sales − Total Purchases.
 - **Ingredients View:**
@@ -137,6 +140,7 @@ Everything is generated in the browser at startup from a fixed seed, **`20261018
 | Category × store × week | 24 × 200 × 147 | each store's share of chain sales and known loss |
 | Item × store × week corrections | sparse | planted store-level stories (store 116 soup) that every total derives from |
 | Purchase orders (`src/data/purchasing.ts`) | item × vendor × delivery day | PO spend and volume, landed cost, HQ cost |
+| DSD receipts (`dsdReceipts` in `src/lib/selectors.ts`) | item × store × week | DSD items' Total Purchases, tied to the Fresh Report DSD line |
 | Recipes and ingredients (`src/data/products.ts`) | PLU × ingredient × week | recipe quantities, ingredient cost per unit of costing |
 | Fresh Report purchases | department × store × week, split to category | Fresh Report channels |
 
@@ -146,6 +150,9 @@ Everything is generated in the browser at startup from a fixed seed, **`20261018
   - Most items cost more on POs than in HQ, partly because of freight (Cost Watch "of which freight").
   - About 27 % cost less, because HQ was set at a seasonal or commodity high.
 - **UPC items:** come from the Weis distribution center at their average cost.
+- **DSD items** (about 11 % of fresh items: mostly Bakery bread, rolls and bagels; also packaged Deli cheese, grocery bunches, bacon and hot dogs, bagged salads, sushi):
+  - Delivered straight to stores. No Biceps PO; receipts are recorded item by item in Retalix HQ at the receipt cost.
+  - Each department-store-week's DSD purchases (the Fresh Report DSD line) are split across its DSD items by their cost of goods sold, so the items add up exactly to the department.
 - **Composite PLUs:** costed from recipes in real quantities.
   - Pizza dough ball, shredded mozzarella and pizza sauce are shared by every pizza and stromboli; pepperoni by seven PLUs. Slices take the pie's recipe ÷ 8.
   - The HQ standard cost is the recipe at ingredient costs in the month it was last costed.
@@ -179,7 +186,7 @@ Horizon: FY2024 (starts Sun 12/31/2023) to FY2026 to date, as of **Sun 10/18/202
 | **Pie pumpkin bins:** $150 per bin in HQ, $250 per bin on POs in season (W36–W42). | #1 in Cost Watch, PO vs HQ cost. |
 | **16 in. Pepperoni Pizza:** recipe last costed 03/2025 at $4.85. The same recipe at today's ingredient costs is $5.66 (box +32 %, dough +18 %, mozzarella and pepperoni +12 %), so margin is about 8 pts too high. | Default PLU in the Ingredients View; #1 in Cost Watch › Recipe PLUs. |
 | **Where used:** pizza dough ball is in 13 PLUs. At $0.85 / lb instead of $0.70, the annual cost change is +$439K and the margin impact −$439K. | Ingredients View › Where used. |
-| **Deli soup:** store 116 sold 1 unit and scanned out 4,000 in FY2026 W40. It is a likely entry error. | Known Loss Report (flagged entries, store table with the SKU); Report to IT and Export list for IT. |
+| **Deli soup:** store 116 sold 1 unit and scanned out 4,000 in FY2026 W40. It is a likely entry error (Known Loss Report scope TBD). | Known Loss Report (flagged entries, store table with the SKU); Report to IT and Export list for IT. |
 | **Salmon fat-finger:** store 152, W38, 1,110 lb instead of about 15 lb, worth $11,700. | Known Loss Report, flagged entries. |
 | **Strawberries $8.9M:** store 217, W29, above the $100,000 plausibility cap. | Banner; excluded from totals by default. |
 | **Store 154 DSD:** Meat about 7 pts below budget over W39–W42, with DSD at 9 % of sales. | "Below budget" banner in the Fresh Report. |

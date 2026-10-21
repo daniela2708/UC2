@@ -15,6 +15,8 @@ import { pickerItems, resolveIcItem } from '../lib/itemCost';
 import { count, moneyCompact, moneyUnit, pct, volume, weekTick } from '../lib/format';
 import { costChange, periodPoCost, pointsDiff, safeDiv } from '../lib/kpis';
 import { useFilters } from '../lib/filterStore';
+import { DEFAULT_STATE } from '../lib/filters';
+import { buildScope, dsdReceipts } from '../lib/selectors';
 import { useScope, type ViewProps } from './common';
 
 const COST_METHOD_TIP =
@@ -77,7 +79,11 @@ function ItemCostBody({
   const period = state.costPeriod;
   const w0 = weekOfDay(range.start);
   const endWeek = Math.min(weekOfDay(range.end), LAST_COMPLETE_WEEK);
-  const series = useMemo(() => costSeries(i, w0, endWeek, period), [i, w0, endWeek, period]);
+  const series = useMemo(() => {
+    // DSD items: receipts recorded in Retalix HQ for the whole chain.
+    const rec = it.dsd ? dsdReceipts(buildScope(DEFAULT_STATE, range), w0, endWeek).get(i) : undefined;
+    return costSeries(i, w0, endWeek, period, rec ? (w) => rec[w] : undefined);
+  }, [i, it.dsd, range, w0, endWeek, period]);
   const current = currentPoCost(i);
   const nextInfo = newPoCostInfo(i, endWeek);
   const next = nextInfo.cost;
@@ -119,21 +125,25 @@ function ItemCostBody({
   const asOf = nextInfo.week !== endWeek ? ` · as of W${fiscalOfWeek(nextInfo.week).week}` : '';
 
   const tiles: Tile[] = [
-    { label: 'Current PO Cost', info: 'The per-unit cost held in HQ / Retalix today, which Power BI uses.', value: moneyUnit(current), sub: `HQ · updated ${sup.hqUpdatedLabel}${it.costType === 'UPC' ? ' · average cost' : ''}` },
+    { label: 'Current PO Cost', info: 'The per-unit cost held today in Retalix HQ (Weis’s back-office system), which Power BI uses.', value: moneyUnit(current), sub: `HQ · updated ${sup.hqUpdatedLabel}${it.costType === 'UPC' ? ' · average cost' : ''}` },
     {
       label: 'New PO Cost',
       info: produced
         ? 'Recipe cost at the last complete week’s ingredient costs.'
         : 'Period-based PO cost of the last complete week: PO spend ÷ volume purchased, freight included (Proposed). When nothing was bought that week, the latest earlier week.',
       value: moneyUnit(next),
-      sub: produced ? `Recipe at W${fiscalOfWeek(endWeek).week} ingredient costs` : `W${fiscalOfWeek(nextInfo.week).week} POs, incl. freight${asOf}`,
+      sub: produced
+        ? `Recipe at W${fiscalOfWeek(endWeek).week} ingredient costs`
+        : it.dsd
+          ? `W${fiscalOfWeek(nextInfo.week).week} DSD receipt cost (Retalix HQ)`
+          : `W${fiscalOfWeek(nextInfo.week).week} POs, incl. freight${asOf}`,
     },
     { label: 'Cost change', info: 'New PO Cost − Current PO Cost, in $ and %.', value: <Var value={change.pct} kind="pct" invert />, sub: change.abs === null ? '—' : `${change.abs >= 0 ? '+' : '−'}${moneyUnit(Math.abs(change.abs))} per ${unit}` },
     {
-      label: produced ? 'Units produced' : 'Volume purchased',
+      label: produced ? 'Units produced' : it.dsd ? 'Volume received' : 'Volume purchased',
       info: produced ? 'Composite PLUs are made in store: units produced = units sold + known loss units.' : 'Volume received on purchase orders in the range (Biceps).',
       value: volume(qty, unit),
-      sub: produced ? 'Sold + known loss' : `${moneyCompact(spend)} PO spend · ${sup.caseLabel}`,
+      sub: produced ? 'Sold + known loss' : it.dsd ? `${moneyCompact(spend)} DSD receipts (Retalix HQ)` : `${moneyCompact(spend)} PO spend · ${sup.caseLabel}`,
     },
     {
       label: 'Purchase Cost per Unit',
@@ -164,7 +174,7 @@ function ItemCostBody({
     { label: 'Est. margin impact', info: 'Σ (PO cost − HQ cost) × units sold, week by week over the range. Positive = margin overstated by the HQ cost.', value: moneyCompact(impact), sub: impact > 0 ? 'Margin overstated in reports' : 'Margin understated in reports' },
   ];
 
-  const qtyLabel = produced ? 'Units produced' : 'Volume purchased';
+  const qtyLabel = produced ? 'Units produced' : it.dsd ? 'Volume received (DSD)' : 'Volume purchased';
   const costLabel = produced ? 'Recipe cost / unit' : 'PO Cost / Unit';
   const fmtQty = (v: number) => (v >= 1000 ? `${(v / 1000).toFixed(v >= 10000 ? 0 : 1)}K` : String(Math.round(v)));
   const bucket = period === 'week' ? 'Week' : 'Fiscal period';
@@ -172,7 +182,7 @@ function ItemCostBody({
   return (
     <>
       <SectionHeading eyebrow="Item cost" title="Item Cost Over Time" question="What does this item really cost us, and since when?">
-        {it.name} ({it.code}), {range.label}: Current PO Cost <b>{moneyUnit(current)}</b> / {unit} in HQ vs New PO Cost <b>{moneyUnit(next)}</b> (
+        {it.name} ({it.code}), {range.label}: Current PO Cost <b>{moneyUnit(current)}</b> / {unit} in Retalix HQ vs New PO Cost <b>{moneyUnit(next)}</b> (
         <b>
           <Var value={change.pct} kind="pct" invert />
         </b>
@@ -207,8 +217,18 @@ function ItemCostBody({
         </button>
       </div>
 
-      {it.costType === 'UPC' && (
-        <Banner kind="note">UPC items use the average cost in HQ, which already works; real-time PO cost matters for PLU and random-weight items. Purchases are warehouse bill-out (shipments to stores).</Banner>
+      {it.dsd ? (
+        <Banner kind="note">
+          DSD item: received through direct store delivery and recorded item by item in Retalix HQ. Total Purchases and PO Cost / Unit come from HQ receipts; there are no
+          Biceps purchase orders.
+        </Banner>
+      ) : (
+        it.costType === 'UPC' && (
+          <Banner kind="note">
+            UPC items use the average cost in Retalix HQ, which already works; real-time PO cost matters for PLU and random-weight items. Purchases are warehouse bill-out
+            (shipments to stores).
+          </Banner>
+        )
       )}
 
       <KeyFigures
@@ -216,7 +236,7 @@ function ItemCostBody({
         tiles={tiles}
         note={
           <>
-            Current PO Cost is the cost in HQ / Retalix; New PO Cost comes from purchase orders.{' '}
+            Current PO Cost is the cost in Retalix HQ; New PO Cost comes from purchase orders.{' '}
             <button type="button" className="btn-link" onClick={() => openDefinitions('po-cost')}>
               See definitions
             </button>
@@ -226,7 +246,7 @@ function ItemCostBody({
 
       <ChartCard
         title="Item Cost Over Time"
-        subtitle={`By ${bucket.toLowerCase()} · ${costLabel} ${produced ? '' : '(PO spend ÷ volume purchased, incl. freight) '}· dashed line = Current PO Cost (HQ)${gaps ? ` · ${gaps} ${period === 'week' ? 'week' : 'period'}${gaps > 1 ? 's' : ''} without purchases shown as gaps` : ''} · ${qtyLabel.toLowerCase()} below`}
+        subtitle={`By ${bucket.toLowerCase()} · ${costLabel} ${produced ? '' : it.dsd ? '(DSD receipts in Retalix HQ ÷ volume received) ' : '(PO spend ÷ volume purchased, incl. freight) '}· dashed line = Current PO Cost (HQ)${gaps ? ` · ${gaps} ${period === 'week' ? 'week' : 'period'}${gaps > 1 ? 's' : ''} without purchases shown as gaps` : ''} · ${qtyLabel.toLowerCase()} below`}
         height={400}
         legend={[
           { label: costLabel, color: C.s1 },
@@ -270,7 +290,7 @@ function ItemCostBody({
         </section>
       )}
 
-      {!it.composite && (
+      {!it.composite && !it.dsd && (
         <section className="card side-card" aria-label="Purchase orders">
           <div className="side-actions">
             <div>

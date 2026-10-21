@@ -95,10 +95,10 @@ export const KPI_DEFINITIONS: KpiDefinition[] = [
     name: 'Total Purchases',
     unit: '$',
     definition:
-      'PO cost spent, from PO cost and volume in Biceps (landed: case cost + freight). Sources by item: Biceps PO for PLU and random-weight items; warehouse bill-out for UPC items (shipments to stores, used as a proxy for purchases); production cost (recipe) for composite PLUs = units produced (sold + known loss) × recipe cost, unknown loss not included. Store filters take the stores’ share of the category. The Fresh Report keeps its own store-level purchases (Whse, DSD, Packaging, Reclaim, Transfers, In transit, Donations, WC credit, Scan credit), labelled "Fresh Report purchases".',
+      'PO cost spent, from PO cost and volume in Biceps (landed: case cost + freight). Sources by item: Biceps PO for PLU and random-weight items; warehouse bill-out for UPC items (shipments to stores, used as a proxy for purchases); production cost (recipe) for composite PLUs = units produced (sold + known loss) × recipe cost, unknown loss not included; DSD receipt (HQ) for items received through direct store delivery and recorded item by item in Retalix HQ (about 11 % of fresh items, mostly Bakery bread). Store filters take the stores’ share of the category. The Fresh Report keeps its own store-level purchases (Whse, DSD, Packaging, Reclaim, Transfers, In transit, Donations, WC credit, Scan credit), labelled "Fresh Report purchases".',
     formula: 'Σ PO lines (cases × (case cost + freight)) in the period; Fresh Report: Σ purchase channels',
-    source: `${BICEPS} · Warehouse bill-out · ${FRESH}`,
-    reconciliation: 'Item PO spend ties to Biceps PO lines; the Fresh Report ties to Accounting per store and week. The two are different measures and do not add up to each other.',
+    source: `${BICEPS} · Warehouse bill-out · Retalix HQ (DSD receipts) · ${FRESH}`,
+    reconciliation: 'Item PO spend ties to Biceps PO lines. DSD items add up exactly to each department’s Fresh Report DSD purchases by store and week. Biceps PO, bill-out and recipe purchases are a different measure from the Fresh Report’s warehouse and other channels.',
     status: 'Draft',
     priority: 'Must',
     views: [CI, IC, FR],
@@ -125,10 +125,10 @@ export const KPI_DEFINITIONS: KpiDefinition[] = [
     name: 'PO Cost / Unit',
     unit: '$',
     definition:
-      'Period-based weighted average (BCG proposal): total PO spend in the period ÷ volume purchased in the period, freight included. A period without purchases has no PO cost: a gap in charts and "—" in tables; Gross Margin and Total Net Cost then use the most recent PO cost, marked "cost from W38". "Current PO Cost" is the cost held in HQ / Retalix today; "New PO Cost" is the PO cost of the last complete week (or the latest earlier week with purchases, marked "as of W41"). The same method feeds the PO cost source switch. Real-time cost comes from purchase orders in the ordering system (Biceps) and may change after invoice reconciliation.',
+      'Period-based weighted average (BCG proposal): total PO spend in the period ÷ volume purchased in the period, freight included. A period without purchases has no PO cost: a gap in charts and "—" in tables; Gross Margin and Total Net Cost then use the most recent PO cost, marked "cost from W38". "Current PO Cost" is the cost held today in Retalix HQ, Weis’s back-office system; "New PO Cost" is the PO cost of the last complete week (or the latest earlier week with purchases, marked "as of W41"). The same method feeds the PO cost source switch. Real-time cost comes from purchase orders in the ordering system (Biceps) and may change after invoice reconciliation.',
     formula: 'Σ PO spend in the period ÷ Σ volume purchased in the period (null when no volume)',
-    source: `${BICEPS} · Retalix (HQ cost)`,
-    reconciliation: 'PO lines tie to Biceps; HQ cost ties to Retalix.',
+    source: `${BICEPS} · Retalix HQ`,
+    reconciliation: 'PO lines tie to Biceps; HQ cost ties to Retalix HQ.',
     status: 'Proposed',
     priority: 'Must',
     views: [CI, IC, 'Cost Watch'],
@@ -230,6 +230,7 @@ export const KPI_DEFINITIONS: KpiDefinition[] = [
     status: 'Draft',
     priority: 'Must',
     views: [KLR],
+    note: 'Scope TBD: may move to a separate use case or a later wave; the MVP focuses on item cost and ingredient costing. The High Loss Flag remains a required KPI in Category-Item Summary.',
   },
   {
     id: 'it-review-list',
@@ -242,6 +243,7 @@ export const KPI_DEFINITIONS: KpiDefinition[] = [
     status: 'Proposed',
     priority: 'Proposed',
     views: [KLR],
+    note: 'Scope TBD: may move to a separate use case or a later wave; the MVP focuses on item cost and ingredient costing. The High Loss Flag remains a required KPI in Category-Item Summary.',
   },
   {
     id: 'high-loss-flag',
@@ -255,7 +257,7 @@ export const KPI_DEFINITIONS: KpiDefinition[] = [
     status: 'Pending validation',
     priority: 'Must',
     views: [CI, KLR],
-    note: 'Threshold basis: at cost, assumed, Pending validation. See open question 3.',
+    note: 'Scope TBD: may move to a separate use case or a later wave; the MVP focuses on item cost and ingredient costing. The High Loss Flag remains a required KPI in Category-Item Summary. Threshold basis: at cost, assumed, Pending validation. See open question 3.',
   },
 
   {
@@ -303,9 +305,9 @@ KPI_DEFINITIONS.push(
     name: 'Cost type · Cost reliability',
     unit: 'class',
     definition:
-      'UPC: packaged items with a manufacturer barcode; average cost in HQ is reliable. PLU: sold by the unit without a barcode (avocados, Deli composite items). Random weight: sold by the pound (meat, Deli meats, seafood). The cost logic changes only for PLU and random-weight items, which show "Under review".',
+      'UPC: packaged items with a manufacturer barcode; average cost in Retalix HQ is reliable. PLU: sold by the unit without a barcode (avocados, Deli composite items). Random weight: sold by the pound (meat, Deli meats, seafood). The cost logic changes only for PLU and random-weight items, which show "Under review".',
     formula: 'Item master attribute',
-    source: 'Retalix item master',
+    source: 'Retalix HQ item master',
     reconciliation: 'Matches the item master PLU / UPC flag.',
     status: 'Proposed',
     priority: 'Proposed',
@@ -315,9 +317,9 @@ KPI_DEFINITIONS.push(
     id: 'cost-source',
     name: 'Cost source (PO vs HQ)',
     unit: 'switch',
-    definition: 'PLU and random-weight items use the real-time PO cost by default: each week’s period-based PO cost (PO spend ÷ volume purchased, freight included), or the most recent one when nothing was bought that week. Switching to HQ shows margins on the cost held in HQ / Retalix. UPC items always use the HQ average cost. The switch shows how many points the margin moves.',
+    definition: 'PLU and random-weight items use the real-time PO cost by default: each week’s period-based PO cost (PO spend ÷ volume purchased, freight included), or the most recent one when nothing was bought that week. Switching to HQ shows margins on the cost held in Retalix HQ, Weis’s back-office system. UPC items always use the HQ average cost. The switch shows how many points the margin moves.',
     formula: 'Net cost from the weekly period-based PO cost or the HQ default cost',
-    source: `${BICEPS} · Retalix`,
+    source: `${BICEPS} · Retalix HQ`,
     reconciliation: 'Pending Biceps access (open question 2).',
     status: 'Pending validation',
     priority: 'Proposed',
@@ -379,9 +381,9 @@ KPI_DEFINITIONS.push(
     name: 'Cost gap, of which freight, margin impact (Cost Watch)',
     unit: '%, $',
     definition:
-      'Cost gap % = New PO Cost ÷ Current PO Cost (HQ) − 1. "Of which freight" is the freight per unit inside the New PO Cost: HQ costs exclude freight, so that part of the gap is expected and the rest is a real cost change. Some items cost less on POs than in HQ because HQ was set at a seasonal or commodity high that has since come down. Cost change = (New PO Cost − HQ cost) × units sold in the last 4 weeks; margin impact = −cost change (red when costs went up).',
+      'Cost gap % = New PO Cost ÷ Current PO Cost (HQ) − 1, where HQ is Retalix HQ, Weis’s back-office system. "Of which freight" is the freight per unit inside the New PO Cost: HQ costs exclude freight, so that part of the gap is expected and the rest is a real cost change. Some items cost less on POs than in HQ because HQ was set at a seasonal or commodity high that has since come down. Cost change = (New PO Cost − HQ cost) × units sold in the last 4 weeks; margin impact = −cost change (red when costs went up).',
     formula: 'freight per unit = New PO Cost × freight rate ÷ (1 + freight rate); margin impact = −(New PO Cost − HQ) × units',
-    source: `${BICEPS} · Retalix (HQ cost)`,
+    source: `${BICEPS} · Retalix HQ`,
     reconciliation: 'Freight per case ties to Biceps PO lines.',
     status: 'Proposed',
     priority: 'Proposed',
@@ -391,9 +393,9 @@ KPI_DEFINITIONS.push(
     id: 'recipe-age',
     name: 'Recipe cost age',
     unit: 'months',
-    definition: 'Months since a composite PLU’s recipe cost was last updated in the Excel recipe file and HQ. The Deli team re-costs recipes about once a year; older than 6 months gets an amber chip in Cost Watch.',
+    definition: 'Months since a composite PLU’s recipe cost was last updated in the Excel recipe file and Retalix HQ. The Deli team re-costs recipes about once a year; older than 6 months gets an amber chip in Cost Watch.',
     formula: 'as-of month − last update month',
-    source: 'Deli recipe Excel files · Retalix',
+    source: 'Deli recipe Excel files · Retalix HQ',
     reconciliation: 'Matches the update dates in the recipe files.',
     status: 'Draft',
     priority: 'Proposed',
@@ -429,7 +431,7 @@ KPI_DEFINITIONS.push(
     name: 'Where used',
     unit: 'what-if',
     definition:
-      'Every PLU whose recipe uses an ingredient (e.g. pizza dough ball, shredded mozzarella, pizza sauce), with current cost, new cost, Gross Profit % before and after, and annual impact. A new ingredient cost flows through every recipe that uses it. Read-only: nothing is saved or sent to HQ.',
+      'Every PLU whose recipe uses an ingredient (e.g. pizza dough ball, shredded mozzarella, pizza sauce), with current cost, new cost, Gross Profit % before and after, and annual impact. A new ingredient cost flows through every recipe that uses it. Read-only: nothing is saved or sent to Retalix HQ.',
     formula: 'Annual impact = (new PLU cost − current PLU cost) × units produced (units sold + known loss units) over the trailing 52 weeks',
     source: 'Simulation only',
     reconciliation: 'Recipe costs match the Ingredients View for the same week.',
@@ -448,7 +450,7 @@ export interface OpenQuestion {
 /** Open questions from the requirements workbook. */
 export const OPEN_QUESTIONS: OpenQuestion[] = [
   { id: 'q1', question: 'Source for Gross Sales in the Fresh Report: 1048 or Category Analyzer?', context: 'Affects Total Gross Sales and Gross Margin Rate in the Fresh Report.' },
-  { id: 'q2', question: 'Access to PO cost in Biceps, and how it links to Retalix.', context: 'Needed for PO Cost / Unit, New PO Cost and the cost source switch.' },
+  { id: 'q2', question: 'Access to PO cost in Biceps, and how it links to Retalix HQ.', context: 'Needed for PO Cost / Unit, New PO Cost and the cost source switch.' },
   {
     id: 'q3',
     question: 'Threshold to flag high loss, for both data entry errors and high real loss.',

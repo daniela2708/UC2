@@ -44,7 +44,9 @@ import {
   addAgg,
   buildScope,
   costWatchRows,
+  dsdReceipts,
   pluRows,
+  purchaseSource,
   emptyAgg,
   findFlags,
   itemAggregates,
@@ -341,7 +343,7 @@ describe('purchases reconcile', () => {
       expect(units / t.units).toBeCloseTo(1, 6);
       expect(purchaseCostPerUnit(a.purch, units)! / (t.spend / t.units)).toBeCloseTo(1, 6);
     }
-    const upc = aggs.find((a) => ITEMS[a.item].costType === 'UPC' && a.purch > 0)!;
+    const upc = aggs.find((a) => ITEMS[a.item].costType === 'UPC' && !ITEMS[a.item].dsd && a.purch > 0)!;
     const lines = ordersOf(upc.item).filter((o) => o.day >= ytd.start && o.day <= ytd.end);
     expect(lines.every((o) => o.vendor === 'Weis Distribution Center')).toBe(true);
     expect(upc.purch / lines.reduce((x, o) => x + (o.caseCost + o.freight) * o.cases, 0)).toBeCloseTo(1, 6);
@@ -377,7 +379,7 @@ describe('purchases reconcile', () => {
     const rand = mulberry32(SEED + 1);
     for (let k = 0; k < 30; k++) {
       const i = Math.floor(rand() * ITEMS.length);
-      if (ITEMS[i].composite) continue;
+      if (ITEMS[i].composite || ITEMS[i].dsd) continue;
       const byDay = new Map<number, number>();
       for (const o of ordersOf(i)) byDay.set(o.day, (byDay.get(o.day) ?? 0) + o.units);
       const used = (day: number) => {
@@ -703,5 +705,61 @@ describe('ranking order (Top first | Bottom first)', () => {
     expect(rankSlice(rows, (r) => r.v, 'top', 2).map((r) => r.v)).toEqual([10, 7]);
     expect(rankSlice(rows, (r) => r.v, 'bottom', 2).map((r) => r.v)).toEqual([-5, -2]);
     expect(rows.map((r) => r.v)).toEqual([3, -5, 10, 0, 7, -2]);
+  });
+});
+
+describe('DSD items (receipts in Retalix HQ)', () => {
+  const p9 = resolveTime({ ...BASE_TIME, mode: 'fiscal', grain: 'period', fy: 2026, period: 9 });
+  const dsdChannel = (sc: ReturnType<typeof buildScope>, d: number, weeks: number[]) => {
+    let t = 0;
+    for (const row of freshStoreWeeks(sc, [d], weeks).values()) for (const c of row) t += c.purchases.dsd;
+    return t;
+  };
+  it('about 5–12 % of fresh items are DSD, mostly Bakery bread, with no Biceps POs and the "DSD receipt (HQ)" source', () => {
+    const dsd = ITEMS.filter((x) => x.dsd);
+    expect(dsd.length / ITEMS.length).toBeGreaterThan(0.05);
+    expect(dsd.length / ITEMS.length).toBeLessThan(0.12);
+    const bakery = dsd.filter((x) => DEPTS[x.dept].name === 'Bakery').length;
+    expect(bakery).toBeGreaterThanOrEqual(Math.max(...DEPTS.map((d) => dsd.filter((x) => x.dept === d.idx).length)));
+    for (const it of dsd) {
+      expect(ordersOf(it.idx)).toHaveLength(0);
+      expect(purchaseSource(it.idx)).toBe('DSD receipt (HQ)');
+      expect(it.composite).toBeUndefined();
+    }
+  });
+  it('DSD receipts by item add up exactly to each department’s Fresh Report DSD purchases (all stores and a store subset)', () => {
+    const weeks: number[] = [];
+    for (let w = p9.startWeek; w <= p9.endWeek; w++) weeks.push(w);
+    for (const stores of [[], [154, 116, 217, 8]]) {
+      const sc = buildScope({ ...DEFAULT_STATE, stores }, p9, { deptOnly: true });
+      const rec = dsdReceipts(sc, p9.startWeek, p9.endWeek);
+      for (const d of DEPTS) {
+        let items = 0;
+        for (const [i, arr] of rec) if (ITEMS[i].dept === d.idx) for (const w of weeks) items += arr[w];
+        const fresh = dsdChannel(sc, d.idx, weeks);
+        expect(fresh).toBeGreaterThan(0);
+        expect(items / fresh).toBeCloseTo(1, 9);
+      }
+    }
+  });
+  it('Category-Item Summary Total Purchases of DSD items equal the department DSD purchases, at the receipt cost', () => {
+    const weeks: number[] = [];
+    for (let w = p9.startWeek; w <= p9.endWeek; w++) weeks.push(w);
+    const all = buildScope(DEFAULT_STATE, p9);
+    const aggs = itemAggregates(all, DEFAULT_STATE.costBasis, 'po');
+    for (const d of DEPTS) {
+      const items = aggs.filter((a) => ITEMS[a.item].dsd && ITEMS[a.item].dept === d.idx);
+      const purch = items.reduce((x, a) => x + a.purch, 0);
+      expect(purch / dsdChannel(buildScope(DEFAULT_STATE, p9, { deptOnly: true }), d.idx, weeks)).toBeCloseTo(1, 9);
+      for (const a of items) {
+        const units = ITEMS[a.item].uom === 'ea' ? a.purchUnitsEa : a.purchUnitsLb;
+        // PO Cost / Unit for a DSD item is its receipt cost (one cost per week; P9 averages it).
+        const lo = Math.min(...weeks.map((w) => poUnitCostWeek(a.item, w)));
+        const hi = Math.max(...weeks.map((w) => poUnitCostWeek(a.item, w)));
+        const unit = a.purch / units;
+        expect(unit).toBeGreaterThanOrEqual(lo - 1e-9);
+        expect(unit).toBeLessThanOrEqual(hi + 1e-9);
+      }
+    }
   });
 });

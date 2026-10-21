@@ -19,7 +19,7 @@ const FAMILY_ORDER = ['Pizza & stromboli', 'Platters', 'Meals', 'Chicken', 'Sand
 
 const PO_COLUMNS: HierCol[] = [
   { key: 'type', label: 'Cost type', left: true, group: 'Cost' },
-  { key: 'hq', label: 'Current PO Cost (HQ)', title: 'Cost held in HQ / Retalix, without freight', group: 'Cost' },
+  { key: 'hq', label: 'Current PO Cost (HQ)', title: 'Cost held in Retalix HQ (Weis’s back-office system), without freight', group: 'Cost' },
   { key: 'updated', label: 'HQ cost updated', group: 'Cost' },
   { key: 'next', label: 'New PO Cost (last week)', title: 'Period-based PO cost of the last complete week: PO spend ÷ volume purchased, freight included (Proposed). "as of W41" when nothing was bought that week.', group: 'Cost' },
   { key: 'gap', label: 'Cost gap %', group: 'Cost' },
@@ -220,14 +220,14 @@ export function CostWatchView({ openDefinitions }: ViewProps) {
     mode === 'po'
       ? [
           { label: 'Items reviewed', info: 'PLU and random-weight items with sales in the last 4 weeks.', value: count(poRows.length), sub: describeProductScope(state) },
-          { label: 'Cost gap above 10 %', info: 'Items whose New PO Cost is more than 10 % above the cost in HQ.', value: count(gaps10), sub: poRows.length ? `${pct(gaps10 / poRows.length)} of items` : '—' },
-          { label: 'Median HQ cost age', info: 'Months since the HQ default cost was last updated.', value: medianAge === null ? '—' : `${medianAge} mo`, sub: 'HQ / Retalix default cost' },
+          { label: 'Cost gap above 10 %', info: 'Items whose New PO Cost is more than 10 % above the cost in Retalix HQ.', value: count(gaps10), sub: poRows.length ? `${pct(gaps10 / poRows.length)} of items` : '—' },
+          { label: 'Median HQ cost age', info: 'Months since the HQ default cost was last updated.', value: medianAge === null ? '—' : `${medianAge} mo`, sub: 'Retalix HQ default cost' },
           { label: 'Cost change (4 weeks)', info: 'Σ (New PO Cost − HQ cost) × units sold in the last 4 weeks, items where PO cost is higher.', value: <Impact value={costUp} kind="cost" compact />, sub: `${count(up.length)} items cost more on POs` },
           { label: 'Margin impact (4 weeks)', info: 'Σ −cost change over every item: what the HQ cost hides from reported margin. Negative = margin overstated.', value: <Impact value={marginPo} kind="margin" compact />, sub: 'Margin overstated in reports' },
           { label: 'Below target band', info: 'Items whose Gross Margin Rate on PO cost is below their department’s target band (Proposed).', value: count(belowPo), sub: <StatusChip status="Proposed" /> },
         ]
       : [
-          { label: 'Composite PLUs', info: 'Deli and Bakery items costed from a recipe in Excel.', value: count(recipes.length), sub: `${families.length} families` },
+          { label: 'Composite PLUs', info: 'Deli and Bakery items costed from a recipe in Excel and typed into Retalix HQ.', value: count(recipes.length), sub: `${families.length} families` },
           { label: 'Older than 6 months', info: 'Recipe cost not updated in the last 6 months.', value: count(staleRecipes), sub: recipes.length ? `${pct(staleRecipes / recipes.length)} of PLUs` : '—' },
           { label: 'Cost change (YTD)', info: 'Σ (recipe at today’s ingredient costs − recipe cost in HQ) × units sold, FY2026 to date.', value: <Impact value={recipeChange} kind="cost" compact />, sub: 'Recipes cost more today' },
           { label: 'Margin impact (YTD)', info: '−Cost change: margin overstated in reports because HQ holds old recipe costs.', value: <Impact value={recipeImpact} kind="margin" compact />, sub: 'Margin overstated in reports' },
@@ -281,10 +281,10 @@ export function CostWatchView({ openDefinitions }: ViewProps) {
 
   return (
     <>
-      <SectionHeading eyebrow="Cost accuracy" title="Cost Watch" question="Where is the cost in HQ out of date, and what does it do to margin?">
+      <SectionHeading eyebrow="Cost accuracy" title="Cost Watch" question="Where is the cost in Retalix HQ out of date, and what does it do to margin?">
         {mode === 'po' ? (
           <>
-            {describeProductScope(state)}: <b>{count(gaps10)}</b> of <b>{count(poRows.length)}</b> PLU and random-weight items cost more than 10 % above the cost in HQ; margin
+            {describeProductScope(state)}: <b>{count(gaps10)}</b> of <b>{count(poRows.length)}</b> PLU and random-weight items cost more than 10 % above the cost in Retalix HQ; margin
             impact <Impact value={marginPo} kind="margin" compact /> over the last 4 weeks
             {top && top.marginImpact < 0 && (
               <>

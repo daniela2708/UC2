@@ -9,17 +9,21 @@ export function SectionHeading({
   title,
   question,
   children,
+  badge,
 }: {
   eyebrow: string;
   title: string;
   question: string;
   children?: ReactNode;
+  /** A chip next to the title (e.g. "Scope TBD"). */
+  badge?: ReactNode;
 }) {
   return (
     <section className="section-head" aria-labelledby="section-title">
       <p className="eyebrow">{eyebrow}</p>
       <h2 className="section-title" id="section-title">
         {title}
+        {badge && <span className="title-badge">{badge}</span>}
       </h2>
       <p className="section-question">{question}</p>
       {children && <p className="section-narrative">{children}</p>}
