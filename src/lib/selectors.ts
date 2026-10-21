@@ -32,6 +32,7 @@ import {
   highLossFlag,
   inNewItemWindow,
   likelyEntryError,
+  marginImpactOf,
   safeDiv,
   weeksOnSale,
   netCostPerUnit,
@@ -1207,7 +1208,10 @@ export interface PluRow {
   ageMonths: number;
   estCost: number;
   units: number;
-  impact: number;
+  /** (recipe at today's ingredient costs − recipe cost in HQ) × units sold, FY to date. */
+  costChange: number;
+  /** −cost change: margin overstated in reports when the recipe costs more today. */
+  marginImpact: number;
   displayedMargin: number;
   estMargin: number;
   family: string;
@@ -1230,7 +1234,7 @@ export function pluRows(scope: Scope): PluRow[] {
       units += m.units[i * NW + w] * f + adj.u;
       net += (m.sales[i * NW + w] * f + adj.g) * (1 - m.disc[it.dept * NW + w]);
     }
-    const est = estimatedCompositeCost(comp);
+    const est = estimatedCompositeCost(comp, LAST_COMPLETE_WEEK);
     const netPrice = units > 0 ? net / units : 0;
     out.push({
       item: i,
@@ -1240,13 +1244,14 @@ export function pluRows(scope: Scope): PluRow[] {
       ageMonths: comp.ageMonths,
       estCost: est,
       units,
-      impact: (est - comp.standardCost) * units,
+      costChange: (est - comp.standardCost) * units,
+      marginImpact: marginImpactOf((est - comp.standardCost) * units),
       displayedMargin: netPrice > 0 ? 1 - comp.standardCost / netPrice : 0,
       estMargin: netPrice > 0 ? 1 - est / netPrice : 0,
       family: comp.family,
     });
   }
-  return out.sort((a, b) => b.impact - a.impact);
+  return out.sort((a, b) => a.marginImpact - b.marginImpact);
 }
 
 // ---------------------------------------------------------------- Misc
@@ -1498,14 +1503,17 @@ export interface CostWatchRow {
   retail: number | null;
   gmHq: number | null;
   gmPo: number | null;
-  impact: number;
+  /** (New PO Cost − HQ cost) × units sold in the last 4 weeks. Positive = PO costs more than HQ. */
+  costChange: number;
+  /** −cost change: margin overstated in reports when POs cost more than HQ. */
+  marginImpact: number;
 }
 
 const costWatchCache = new Map<string, CostWatchRow[]>();
 
 /**
  * PLU and random-weight items: HQ cost vs the New PO Cost (period-based PO cost of the last complete week).
- * Est. impact = (New PO Cost − HQ cost) × units sold in the same 4 weeks (chain): margin overstated in reports.
+ * Cost change = (New PO Cost − HQ cost) × units sold in the last 4 weeks (chain); margin impact = −cost change.
  */
 export function costWatchRows(scope: Scope): CostWatchRow[] {
   return memo(costWatchCache, scope.productKey, () => {
@@ -1540,10 +1548,11 @@ export function costWatchRows(scope: Scope): CostWatchRow[] {
         retail,
         gmHq: retail ? 1 - hq / retail : null,
         gmPo: retail && next !== null ? 1 - next / retail : null,
-        impact: next === null ? 0 : (next - hq) * units,
+        costChange: next === null ? 0 : (next - hq) * units,
+        marginImpact: next === null ? 0 : marginImpactOf((next - hq) * units),
       });
     }
-    return out.sort((a, b) => b.impact - a.impact);
+    return out.sort((a, b) => a.marginImpact - b.marginImpact);
   });
 }
 

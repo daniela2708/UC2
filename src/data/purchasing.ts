@@ -74,10 +74,18 @@ export const PURCHASING_STORIES = {
     item: 'Roma Tomatoes',
     casePack: 25,
     mainVendor: 'Susquehanna Valley Growers',
-    caseBefore: 19.95,
-    caseAfter: 44.95,
-    otherVendorCase: 20.95,
-    fromWeek: globalWeek(2026, 36),
+    /** Case cost from the Produce category manager: $19.95 normally, a glut in W35, a spike in W36, then back to normal. */
+    caseNormal: 19.95,
+    caseByWeek: new Map<number, number>([
+      [globalWeek(2026, 35), 4.95],
+      [globalWeek(2026, 36), 44.95],
+      [globalWeek(2026, 37), 32.95],
+      [globalWeek(2026, 38), 24.95],
+    ]),
+    /** The second vendor charges $1.00 more per case and moves with the market. */
+    otherVendorPremium: 1,
+    glutWeek: globalWeek(2026, 35),
+    spikeWeek: globalWeek(2026, 36),
     hqCase: 19.45,
     hqUpdated: [2025, 11] as [number, number],
   },
@@ -189,7 +197,7 @@ export function supplyOf(i: number): ItemSupply {
 export function caseCostFor(it: Item, sup: ItemSupply, v: number, day: number): number {
   const w = Math.min(weekOfDay(day), NW - 1);
   const r = PURCHASING_STORIES.roma;
-  if (it.name === r.item) return v === 0 ? (w >= r.fromWeek ? r.caseAfter : r.caseBefore) : r.otherVendorCase;
+  if (it.name === r.item) return (r.caseByWeek.get(w) ?? r.caseNormal) + (v === 0 ? 0 : r.otherVendorPremium);
   const p = PURCHASING_STORIES.pumpkins;
   if (it.name === p.item) return w >= p.seasonFrom && w <= p.seasonTo ? p.seasonCase : p.normalCase;
   const unit = getModel().poCost[it.idx * NW + w] * sup.vendors[v].factor * (1 + 0.015 * hashNormal(it.idx, v, day, 710));

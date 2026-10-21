@@ -341,7 +341,9 @@ export interface SimResult {
   marginNewCost: number | null;
   retailToHold: number | null;
   marginWithNewRetail: number | null;
-  /** Annual Gross Margin $ change at current retail (new cost). */
+  /** Annual cost change: (new cost − cost) × annual units. Positive = costs more. */
+  annualCostChange: number;
+  /** Annual Gross Margin $ change at current retail (new cost) = −annual cost change. */
   impactNoRetailChange: number;
   /** Annual Gross Margin $ change with the new retail (or the retail that holds the margin). */
   impactWithRetailChange: number;
@@ -354,6 +356,21 @@ export function unitMarginRate(cost: Num, retail: Num): number | null {
 }
 
 /** The Deli team's spreadsheet: margin today, at the new cost, and the retail needed to hold today's margin. */
+/**
+ * Sign convention for cost what-ifs: a cost increase is a margin loss. Margin impact = −(cost change), so
+ * "Annual cost change +$439K" reads with "Margin impact −$439K" (both red); a cost decrease reads green.
+ */
+export function marginImpactOf(costChange: number): number {
+  return costChange === 0 ? 0 : -costChange;
+}
+
+/** Tone of a dollar impact: 'cost' kind is bad when positive, 'margin' kind is bad when negative. */
+export function impactTone(value: number | null, kind: 'cost' | 'margin'): 'neg' | 'pos' | 'flat' {
+  if (value === null || !Number.isFinite(value) || Math.abs(value) < 0.005) return 'flat';
+  const bad = kind === 'cost' ? value > 0 : value < 0;
+  return bad ? 'neg' : 'pos';
+}
+
 export function simulateCostChange(x: SimInputs): SimResult {
   const marginNow = unitMarginRate(x.cost, x.retail);
   const marginNewCost = unitMarginRate(x.newCost, x.retail);
@@ -365,7 +382,8 @@ export function simulateCostChange(x: SimInputs): SimResult {
     marginNewCost,
     retailToHold,
     marginWithNewRetail: retailUsed === null ? null : unitMarginRate(x.newCost, retailUsed),
-    impactNoRetailChange: (x.cost - x.newCost) * units,
+    annualCostChange: (x.newCost - x.cost) * units,
+    impactNoRetailChange: marginImpactOf((x.newCost - x.cost) * units),
     impactWithRetailChange: retailUsed === null ? 0 : (retailUsed - x.newCost - (x.retail - x.cost)) * units,
   };
 }

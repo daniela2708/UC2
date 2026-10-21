@@ -1,7 +1,8 @@
 import { Info } from 'lucide-react';
 import { useId, type ReactNode } from 'react';
 import { pts, pctChange, tone } from '../lib/format';
-import { HIGH_LOSS_FLAG_TIP } from '../lib/kpis';
+import { HIGH_LOSS_FLAG_TIP, impactTone } from '../lib/kpis';
+import { money, moneyCompact } from '../lib/format';
 
 export function InfoTip({ text, below = false, label = 'More information' }: { text: string; below?: boolean; label?: string }) {
   const id = useId();
@@ -161,4 +162,16 @@ export function FlagCell({ flags, errors, extra }: { flags: number; errors: numb
       {extra}
     </span>
   );
+}
+
+/**
+ * Signed dollar impact with the sign convention: kind "cost" (cost change) is red when positive, kind "margin"
+ * (margin impact) is red when negative; the opposite is green.
+ */
+export function Impact({ value, kind, compact = false }: { value: number | null; kind: 'cost' | 'margin'; compact?: boolean }) {
+  if (value === null || !Number.isFinite(value)) return <span>—</span>;
+  const fmt = compact ? moneyCompact : money;
+  const t = impactTone(value, kind);
+  const text = t === 'flat' ? '$0' : `${value > 0 ? '+' : '−'}${fmt(Math.abs(value))}`;
+  return <span className={`impact ${t}`}>{text}</span>;
 }

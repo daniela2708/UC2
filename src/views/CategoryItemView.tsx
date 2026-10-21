@@ -43,6 +43,8 @@ const COST_LABEL: Record<CostElement, string> = {
   freight: 'Freight billed separately',
 };
 
+const SAME_KPI_NOTE = 'Same value for PLU and random-weight items under the current definitions (open question 5).';
+
 function itemColumns(idStores: boolean, basis: LossBasis): HierCol[] {
   const yoy = idStores ? 'ID Stores YoY' : 'YoY';
   return [
@@ -60,11 +62,17 @@ function itemColumns(idStores: boolean, basis: LossBasis): HierCol[] {
         'PO cost spent (Biceps PO cost × volume). UPC: warehouse bill-out, shipments to stores used as a proxy for purchases. Composite PLUs: production cost (recipe) = units produced (sold + known loss) × recipe cost; unknown loss not included. Store filters take the stores’ share of the category.',
       group: 'Cost',
     },
-    { key: 'pcpu', label: 'Purchase Cost per Unit', title: 'SUM(Total Purchases) ÷ SUM(volume purchased from PO data), within one unit of measure', group: 'Cost' },
+    {
+      key: 'pcpu',
+      label: 'Purchase Cost per Unit',
+      title: `SUM(Total Purchases) ÷ SUM(volume purchased from PO data), within one unit of measure. ${SAME_KPI_NOTE}`,
+      group: 'Cost',
+      defaultHidden: true,
+    },
     {
       key: 'po',
       label: 'PO Cost / Unit',
-      title: 'Period-based (Proposed): PO spend in the period ÷ volume purchased in the period. "—" when nothing was bought; margins then use the most recent PO cost ("cost from W38"). UPC: average cost; composite PLUs: recipe cost.',
+      title: `Period-based (Proposed): PO spend in the period ÷ volume purchased in the period. "—" when nothing was bought; margins then use the most recent PO cost ("cost from W38"). UPC: average cost; composite PLUs: recipe cost. ${SAME_KPI_NOTE}`,
       group: 'Cost',
     },
     { key: 'tnc', label: 'Total Net Cost', title: 'Cost of units sold under the selected cost basis', group: 'Cost' },

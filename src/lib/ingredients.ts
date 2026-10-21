@@ -6,7 +6,7 @@
 import { LAST_COMPLETE_WEEK } from '../data/calendar';
 import { getModel, ND, NW } from '../data/generate';
 import { COMPONENTS, DEPTS, ingredientUnitCost, ITEMS, itemByName, recipeCostAt, type IngredientUnit, type Item } from '../data/products';
-import { safeDiv } from './kpis';
+import { marginImpactOf, safeDiv } from './kpis';
 import { itemIndices } from './filters';
 
 const COMPOSITE_DEPTS = new Set(['Deli', 'Bakery']);
@@ -140,7 +140,10 @@ export interface WhereUsedRow {
   gpAfter: number | null;
   /** Units produced over the trailing 52 weeks: units sold + known loss units. */
   unitsProduced: number;
-  annualImpact: number;
+  /** (new cost − current cost) × units produced. Positive = the PLU costs more. */
+  annualCostChange: number;
+  /** −annual cost change: a cost increase is a margin loss. */
+  marginImpact: number;
 }
 
 /** Average gross price per unit over the 4 weeks ending at week `w`. */
@@ -194,7 +197,8 @@ export function whereUsed(key: string, newUnitCost: number | null, week = LAST_C
         gpBefore: retail ? (retail - currentCost) / retail : null,
         gpAfter: retail ? (retail - newCost) / retail : null,
         unitsProduced,
-        annualImpact: (newCost - currentCost) * unitsProduced,
+        annualCostChange: (newCost - currentCost) * unitsProduced,
+        marginImpact: marginImpactOf((newCost - currentCost) * unitsProduced),
       };
     })
     .sort((a, b) => b.unitsProduced * b.qty - a.unitsProduced * a.qty);

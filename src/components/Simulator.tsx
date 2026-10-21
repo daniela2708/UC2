@@ -5,9 +5,10 @@ import { LAST_COMPLETE_WEEK } from '../data/calendar';
 import { getModel, NW } from '../data/generate';
 import { ITEMS } from '../data/products';
 import { currentPoCost, newPoCost, recipeCost, recipeLines } from '../data/purchasing';
-import { money, moneyUnit, pct } from '../lib/format';
+import { moneyUnit, pct } from '../lib/format';
 import { clampSimInput, pointsDiff, safeDiv, simulateCostChange } from '../lib/kpis';
-import { Var } from './ui';
+import { Impact, Var } from './ui';
+import { belowTarget, catBand } from '../data/targets';
 
 const SimContext = createContext<(item: number) => void>(() => undefined);
 
@@ -76,6 +77,8 @@ function SimulatorModal({ item, onClose }: { item: number; onClose: () => void }
   const [compText, setCompText] = useState(lines[0] ? lines[0].newUnitCost.toFixed(lines[0].newUnitCost < 1 ? 3 : 2) : '');
   const closeRef = useRef<HTMLButtonElement>(null);
   const annualUnits = useMemo(() => trailingUnits(item), [item]);
+  const band = catBand(it.cat);
+  const sharedCount = it.composite ? ITEMS.filter((x) => x.idx !== item && x.composite?.components.some((c) => c.key === comp)).length : 0;
 
   useEffect(() => {
     closeRef.current?.focus();
@@ -111,7 +114,7 @@ function SimulatorModal({ item, onClose }: { item: number; onClose: () => void }
             {it.composite ? (
               <>
                 <label className="field-label" htmlFor="sim-comp">
-                  Component
+                  Ingredient
                 </label>
                 <select
                   id="sim-comp"
@@ -125,15 +128,18 @@ function SimulatorModal({ item, onClose }: { item: number; onClose: () => void }
                 >
                   {lines.map((l) => (
                     <option key={l.key} value={l.key}>
-                      {l.name} ({l.qty.toFixed(1)} {l.unit})
+                      {l.name} ({Number.isInteger(l.qty) ? l.qty : l.qty.toFixed(2)} {l.unit} per unit)
                     </option>
                   ))}
                 </select>
                 <label className="field-label" htmlFor="sim-comp-cost">
-                  New component cost ($ / {lines.find((l) => l.key === comp)?.unit})
+                  New ingredient cost ($ / {lines.find((l) => l.key === comp)?.unit})
                 </label>
                 <input id="sim-comp-cost" className="text-input" inputMode="decimal" maxLength={10} value={compText} onChange={(e) => setCompText(e.target.value.slice(0, 10))} />
-                <p className="side-sub">PLU cost recomputed from the recipe: {moneyUnit(newCost)}</p>
+                <p className="side-sub">
+                  PLU cost recomputed from the recipe: {moneyUnit(newCost)}. The ingredient is in {sharedCount} other PLU recipe{sharedCount === 1 ? '' : 's'}; the Ingredients View shows
+                  them all (Where used).
+                </p>
               </>
             ) : (
               <>
@@ -180,6 +186,12 @@ function SimulatorModal({ item, onClose }: { item: number; onClose: () => void }
                 </td>
               </tr>
               <tr>
+                <td className="left">Target band (Proposed)</td>
+                <td>
+                  {(band.lo * 100).toFixed(0)}–{(band.hi * 100).toFixed(0)} %{r && belowTarget(r.marginNewCost, band) && <span className="cell-sub">New cost puts it below target</span>}
+                </td>
+              </tr>
+              <tr>
                 <td className="left">Retail needed to hold the margin (.x9)</td>
                 <td>{moneyUnit(r?.retailToHold)}</td>
               </tr>
@@ -190,12 +202,22 @@ function SimulatorModal({ item, onClose }: { item: number; onClose: () => void }
                 </td>
               </tr>
               <tr className="total">
-                <td className="left">Annual Gross Margin $ impact · no retail change</td>
-                <td>{r ? money(r.impactNoRetailChange) : '—'}</td>
+                <td className="left">Annual cost change</td>
+                <td>
+                  <Impact value={r ? r.annualCostChange : null} kind="cost" />
+                </td>
               </tr>
               <tr className="total">
-                <td className="left">Annual Gross Margin $ impact · {newRetail !== null ? `retail ${moneyUnit(newRetail)}` : 'retail to hold the margin'}</td>
-                <td>{r ? money(r.impactWithRetailChange) : '—'}</td>
+                <td className="left">Margin impact · no retail change</td>
+                <td>
+                  <Impact value={r ? r.impactNoRetailChange : null} kind="margin" />
+                </td>
+              </tr>
+              <tr className="total">
+                <td className="left">Margin impact · {newRetail !== null ? `retail ${moneyUnit(newRetail)}` : 'retail to hold the margin'}</td>
+                <td>
+                  <Impact value={r ? r.impactWithRetailChange : null} kind="margin" />
+                </td>
               </tr>
             </tbody>
           </table>

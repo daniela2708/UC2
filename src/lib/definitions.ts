@@ -116,6 +116,7 @@ export const KPI_DEFINITIONS: KpiDefinition[] = [
     status: 'Draft',
     priority: 'Must',
     views: [CI, IC],
+    note: 'Same value for PLU and random-weight items under the current definitions (open question 5).',
   },
 
 
@@ -131,7 +132,7 @@ export const KPI_DEFINITIONS: KpiDefinition[] = [
     status: 'Proposed',
     priority: 'Must',
     views: [CI, IC, 'Cost Watch'],
-    note: 'Replaces the earlier 4-week recency weighting. UPC items keep the HQ average cost; composite PLUs use the recipe cost.',
+    note: 'Same value for PLU and random-weight items under the current definitions (open question 5). Replaces the earlier 4-week recency weighting. UPC items keep the HQ average cost; composite PLUs use the recipe cost.',
   },
 
   {
@@ -430,5 +431,10 @@ export const OPEN_QUESTIONS: OpenQuestion[] = [
     id: 'q4',
     question: 'Tracking of cases sent through outside vendors (DSD and C&S). WMBI receives all receiving types and combines them.',
     context: 'Purchases from outside vendors are a known gap in Total Purchases.',
+  },  {
+    id: 'q5',
+    question: 'Are PO Cost / Unit and Purchase Cost per Unit the same KPI?',
+    context: 'Under the current definitions both are PO spend ÷ volume purchased, so they show the same value for PLU and random-weight items (they differ only for UPC and composite PLUs). PO Cost / Unit shows by default; Purchase Cost per Unit is in the column chooser.',
   },
+
 ];

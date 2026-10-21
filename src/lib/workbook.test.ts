@@ -1,12 +1,14 @@
 import { describe, expect, it } from 'vitest';
 import { formatDay, globalWeek, LAST_COMPLETE_WEEK, weekStartDay } from '../data/calendar';
 import { getModel, NW } from '../data/generate';
-import { DEPTS, CATS, ITEMS, itemByName, recipeCostAt } from '../data/products';
+import { DEPTS, CATS, ingredientUnitCost, ITEMS, itemByName, recipeCostAt } from '../data/products';
+
+const ingredientUnitCostToday = (key: string) => ingredientUnitCost(key, LAST_COMPLETE_WEEK);
 import { compositeCostAt, costSeries, currentPoCost, newPoCost, newPoCostInfo, ordersOf, poCostForDays, poCostFromWeek, poTotals, poUnitCostWeek, recipeCost, recipeLines } from '../data/purchasing';
 import { clampIngredientCost, ingredientPickerItems, ingredientsSummary, pluUsing, resolveIngredientsItem, unitsProduced52, whereUsed } from './ingredients';
 import { PLANTED } from '../data/planted';
 import { STORES } from '../data/stores';
-import { belowTarget, catBand } from '../data/targets';
+import { belowTarget, catBand, deptBand } from '../data/targets';
 import { mulberry32, SEED } from '../data/prng';
 import { BASE_TIME, DEFAULT_STATE, fromQuery, resolveTime, toQuery, unusedFilters } from './filters';
 import { pickerItems, resolveIcItem } from './itemCost';
@@ -23,6 +25,8 @@ import {
   likelyEntryError,
   marginAfterLoss,
   netSalesPerUnit,
+  impactTone,
+  marginImpactOf,
   periodPoCost,
   purchaseCostPerUnit,
   roundToX9,
@@ -39,6 +43,8 @@ import { IT_HEAD, itEntryOf, itRows, itSheet } from './itReport';
 import {
   addAgg,
   buildScope,
+  costWatchRows,
+  pluRows,
   emptyAgg,
   findFlags,
   itemAggregates,
@@ -112,13 +118,26 @@ describe('Current vs New PO Cost', () => {
     const off = newPoCostInfo(p, globalWeek(2026, 20));
     expect(off.cost === null || off.week <= globalWeek(2026, 20)).toBe(true);
   });
-  it('Roma tomatoes: HQ holds the old case cost while POs jumped from $19.95 to $44.95 in W36', () => {
+  it('Roma tomatoes: $19.95 normal case, $4.95 glut in W35, $44.95 spike in W36, then back; margin normal outside those weeks', () => {
     const roma = itemByName('Roma Tomatoes').idx;
+    const m = getModel();
     expect(currentPoCost(roma)).toBeCloseTo(19.45 / 25, 3);
-    expect(newPoCost(roma)!).toBeGreaterThan(1.5);
-    expect(poUnitCostWeek(roma, globalWeek(2026, 35))).toBeLessThan(0.9);
-    expect(poUnitCostWeek(roma, globalWeek(2026, 36))).toBeGreaterThan(1.4);
+    const wk = (n: number) => poUnitCostWeek(roma, globalWeek(2026, n));
+    expect(wk(35)).toBeLessThan(0.3);
+    expect(wk(36)).toBeGreaterThan(1.8);
+    expect(wk(37)).toBeLessThan(wk(36));
+    expect(wk(38)).toBeLessThan(wk(37));
+    for (const n of [30, 34, 39, 42]) {
+      expect(wk(n)).toBeGreaterThan(0.8);
+      expect(wk(n)).toBeLessThan(0.9);
+      const retail = m.retail[roma * NW + globalWeek(2026, n)];
+      const margin = 1 - wk(n) / retail;
+      expect(margin).toBeGreaterThan(0.4);
+      expect(margin).toBeLessThan(0.55);
+    }
+    expect(newPoCost(roma)!).toBeLessThan(0.9);
   });
+
   it('Pie pumpkins: $150 per bin in HQ, $250 per bin on POs in season', () => {
     const p = itemByName('Pie Pumpkins').idx;
     expect(currentPoCost(p) * 80).toBeCloseTo(150, 1);
@@ -415,6 +434,17 @@ describe('target bands', () => {
     expect(belowTarget(0.46, catBand(roma.cat))).toBe(false);
     expect(belowTarget(null, catBand(roma.cat))).toBe(false);
   });
+  it('bands are centered on each department’s item-level Gross Margin Rate at PO cost (year to date)', () => {
+    const aggs = itemAggregates(buildScope(DEFAULT_STATE, ytd), DEFAULT_STATE.costBasis, 'po');
+    for (const d of DEPTS) {
+      const t = emptyAgg();
+      for (const a of aggs) if (ITEMS[a.item].dept === d.idx) addAgg(t, a);
+      const gm = grossMarginRate(t.net - t.cost, t.gross, t.net)!;
+      const band = deptBand(d.idx);
+      expect(gm).toBeGreaterThanOrEqual(band.lo);
+      expect(gm).toBeLessThanOrEqual(band.hi);
+    }
+  });
 });
 
 describe('Known Loss Report', () => {
@@ -558,7 +588,7 @@ describe('Ingredients View', () => {
   });
   it('where used: a new ingredient cost flows to every recipe that uses it, with annual impact on units produced', () => {
     const today = whereUsed('mozzarella', null);
-    expect(today.every((r) => r.newCost === r.currentCost && r.annualImpact === 0)).toBe(true);
+    expect(today.every((r) => r.newCost === r.currentCost && r.annualCostChange === 0 && r.marginImpact === 0)).toBe(true);
     const base = today.find((r) => r.item === pizza.idx)!;
     const unitNow = base.currentCost - recipeCostAt(pizza.composite!, LAST_COMPLETE_WEEK, { key: 'mozzarella', unitCost: 0 });
     const newUnit = unitNow / 12 + 0.05;
@@ -569,7 +599,8 @@ describe('Ingredients View', () => {
       expect(r.newCost).toBeCloseTo(recipeCostAt(c, LAST_COMPLETE_WEEK, { key: 'mozzarella', unitCost: newUnit }), 9);
       expect(r.newCost - r.currentCost).toBeCloseTo(r.qty * (newUnit - (r.currentCost - recipeCostAt(c, LAST_COMPLETE_WEEK, { key: 'mozzarella', unitCost: 0 })) / r.qty), 9);
       expect(r.unitsProduced).toBeCloseTo(unitsProduced52(r.item), 6);
-      expect(r.annualImpact).toBeCloseTo((r.newCost - r.currentCost) * r.unitsProduced, 6);
+      expect(r.annualCostChange).toBeCloseTo((r.newCost - r.currentCost) * r.unitsProduced, 6);
+      expect(r.marginImpact).toBeCloseTo(-r.annualCostChange, 6);
       expect(r.gpAfter!).toBeLessThan(r.gpBefore!);
     }
     // Slices use the pie's recipe ÷ 8, so they move by an eighth of the pie.
@@ -585,5 +616,50 @@ describe('Ingredients View', () => {
     expect(clampIngredientCost('2', 0.18)).toBeNull();
     expect(clampIngredientCost('1e3', 0.18)).toBeNull();
     expect(clampIngredientCost('abc', 0.18)).toBeNull();
+  });
+});
+
+describe('sign convention: a cost increase is a margin loss', () => {
+  it('margin impact is the cost change with the opposite sign, red when cost goes up and green when it goes down', () => {
+    expect(marginImpactOf(439_000)).toBe(-439_000);
+    expect(marginImpactOf(-12_000)).toBe(12_000);
+    expect(marginImpactOf(0)).toBe(0);
+    expect(impactTone(439_000, 'cost')).toBe('neg');
+    expect(impactTone(-439_000, 'margin')).toBe('neg');
+    expect(impactTone(-12_000, 'cost')).toBe('pos');
+    expect(impactTone(12_000, 'margin')).toBe('pos');
+    expect(impactTone(0, 'margin')).toBe('flat');
+  });
+  it('where used: higher ingredient cost → positive cost change and negative margin impact; lower → the reverse', () => {
+    const today = ingredientUnitCostToday('mozzarella');
+    const up = whereUsed('mozzarella', today * 1.2);
+    const down = whereUsed('mozzarella', today * 0.8);
+    for (const r of up) {
+      expect(r.annualCostChange).toBeGreaterThan(0);
+      expect(r.marginImpact).toBeLessThan(0);
+    }
+    for (const r of down) {
+      expect(r.annualCostChange).toBeLessThan(0);
+      expect(r.marginImpact).toBeGreaterThan(0);
+    }
+  });
+  it('simulator: a cost increase shows a positive annual cost change and a negative margin impact, and the reverse', () => {
+    const up = simulateCostChange({ cost: 2, retail: 4, newCost: 2.5, newRetail: null, annualUnits: 1000 });
+    expect(up.annualCostChange).toBeCloseTo(500);
+    expect(up.impactNoRetailChange).toBeCloseTo(-500);
+    const down = simulateCostChange({ cost: 2, retail: 4, newCost: 1.5, newRetail: null, annualUnits: 1000 });
+    expect(down.annualCostChange).toBeCloseTo(-500);
+    expect(down.impactNoRetailChange).toBeCloseTo(500);
+  });
+  it('Cost Watch: items costing more on POs than in HQ show a negative margin impact, cheaper ones a positive one', () => {
+    const rows = costWatchRows(buildScope(DEFAULT_STATE, ytd));
+    const ups = rows.filter((r) => r.costChange > 0);
+    const downs = rows.filter((r) => r.costChange < 0);
+    expect(ups.length).toBeGreaterThan(0);
+    expect(downs.length).toBeGreaterThan(0);
+    for (const r of rows) expect(r.marginImpact).toBeCloseTo(-r.costChange, 9);
+    // Sorted with the largest margin loss first.
+    for (let k = 1; k < rows.length; k++) expect(rows[k].marginImpact).toBeGreaterThanOrEqual(rows[k - 1].marginImpact);
+    for (const r of pluRows(buildScope(DEFAULT_STATE, ytd))) expect(r.marginImpact).toBeCloseTo(-r.costChange, 9);
   });
 });

@@ -2028,3 +2028,18 @@ b.pos {
 .where-used-controls .btn-link {
   margin-bottom: 9px;
 }
+
+/* Signed impacts: red when a cost goes up (margin goes down), green the other way */
+.impact.neg {
+  color: var(--neg);
+  font-weight: 600;
+}
+.impact.pos {
+  color: var(--pos);
+  font-weight: 600;
+}
+.impact-pair {
+  display: inline-flex;
+  gap: 6px;
+  align-items: baseline;
+}

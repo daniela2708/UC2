@@ -6,9 +6,10 @@ import { ChartCard, SERIES, StackedBars } from '../components/Charts';
 import { ExportButton } from '../components/ExportButton';
 import { ItemPicker } from '../components/ItemPicker';
 import { Select } from '../components/Select';
-import { CellBar, Field, InfoTip, StatusChip, Var } from '../components/ui';
+import { CellBar, Field, Impact, InfoTip, StatusChip, Var } from '../components/ui';
 import { useFilters } from '../lib/filterStore';
-import { count, money, moneyCompact, moneyUnit, pct, volume, weekTick } from '../lib/format';
+import { belowTarget, catBand } from '../data/targets';
+import { count, moneyCompact, moneyUnit, pct, volume, weekTick } from '../lib/format';
 import { clampIngredientCost, ingredientPickerItems, ingredientsSummary, ingredientWeeks, pluUsing, resolveIngredientsItem, whereUsed } from '../lib/ingredients';
 import { pointsDiff } from '../lib/kpis';
 import { useScope, type ViewProps } from './common';
@@ -61,6 +62,7 @@ function IngredientsBody({
   const sum = useMemo(() => ingredientsSummary(it, range.start, range.end), [it, range.start, range.end]);
   const weeks = useMemo(() => ingredientWeeks(it, w0, w1), [it, w0, w1]);
   const colorOf = (k: number) => SERIES[k % SERIES.length];
+  const band = catBand(it.cat);
   const series = c.components.map((comp, k) => ({ key: comp.key, label: COMPONENTS[comp.key].name, color: colorOf(k) }));
   const chartData = weeks.map((w) => ({ x: weekTick(w.week, fy), ...w.values }));
 
@@ -73,7 +75,8 @@ function IngredientsBody({
   const simCost = costText.trim() === '' ? null : clampIngredientCost(costText, todayCost);
   const invalid = costText.trim() !== '' && simCost === null;
   const used = useMemo(() => whereUsed(ingKey, simCost), [ingKey, simCost]);
-  const impact = used.reduce((a, r) => a + r.annualImpact, 0);
+  const costChange = used.reduce((a, r) => a + r.annualCostChange, 0);
+  const marginImpact = used.reduce((a, r) => a + r.marginImpact, 0);
   const ingredientOptions = useMemo(
     () =>
       Object.values(COMPONENTS)
@@ -89,7 +92,17 @@ function IngredientsBody({
     { label: 'Cost / unit', info: 'Σ ingredient contributions: units per item × cost per unit.', value: moneyUnit(sum.costPerUnit), sub: `Recipe last costed ${c.updatedLabel}` },
     { label: 'Retail price', info: 'Shelf price at the end of the range, shown as a reference.', value: moneyUnit(sum.retail), sub: 'Reference' },
     { label: 'Gross Profit ($)', info: 'Gross Sales − (recipe cost × units sold). Interpretation Pending validation.', value: moneyCompact(sum.grossProfit), sub: `on ${moneyCompact(sum.grossSales)} Gross Sales` },
-    { label: 'Gross Profit (%)', info: 'Gross Profit ÷ Gross Sales, consistent with Gross Margin Rate. Interpretation Pending validation.', value: pct(sum.grossProfitPct), sub: <StatusChip status="Pending validation" /> },
+    {
+      label: 'Gross Profit (%)',
+      info: 'Gross Profit ÷ Gross Sales, consistent with Gross Margin Rate. Interpretation Pending validation. Target band is Proposed.',
+      value: pct(sum.grossProfitPct),
+      sub: (
+        <>
+          Target {(band.lo * 100).toFixed(0)}–{(band.hi * 100).toFixed(0)} %{belowTarget(sum.grossProfitPct, band) && <> · <span className="chip neutral">Below target</span></>} ·{' '}
+          <StatusChip status="Pending validation" />
+        </>
+      ),
+    },
   ];
 
   const ingName = COMPONENTS[ingKey].name;
@@ -207,8 +220,8 @@ function IngredientsBody({
               Where used · {ingName} · {count(used.length)} PLUs <StatusChip status="Proposed" />
             </h3>
             <p className="side-sub">
-              Every recipe that uses the ingredient. Enter a new ingredient cost to see it flow through each recipe; annual impact = cost difference × units produced
-              (units sold + known loss units) over the last 52 weeks.
+              Every recipe that uses the ingredient. Enter a new ingredient cost to see it flow through each recipe. Annual cost change = cost difference × units produced
+              (units sold + known loss units) over the last 52 weeks; margin impact is the same amount with the opposite sign.
             </p>
           </div>
           <ExportButton
@@ -216,7 +229,7 @@ function IngredientsBody({
             getSheet={() => ({
               title: `Where used · ${ingName}`,
               subtitle: `Simulation only · ${ingName} at ${simCost === null ? 'today’s cost' : `${unitCost(simCost)} / ${unit}`} vs ${unitCost(todayCost)} / ${unit}`,
-              head: ['PLU', 'PLU Number', 'Quantity used', 'Unit', 'Current cost', 'New cost', 'Gross Profit % before', 'Gross Profit % after', 'Units produced (52 wk)', 'Annual impact $'],
+              head: ['PLU', 'PLU Number', 'Quantity used', 'Unit', 'Current cost', 'New cost', 'Gross Profit % before', 'Gross Profit % after', 'Units produced (52 wk)', 'Annual cost change $', 'Margin impact $'],
               rows: used.map((r) => [
                 ITEMS[r.item].name,
                 ITEMS[r.item].code,
@@ -227,7 +240,8 @@ function IngredientsBody({
                 pct(r.gpBefore),
                 pct(r.gpAfter),
                 Math.round(r.unitsProduced),
-                Math.round(r.annualImpact),
+                Math.round(r.annualCostChange),
+                Math.round(r.marginImpact),
               ]),
             })}
           />
@@ -253,8 +267,10 @@ function IngredientsBody({
           )}
           <InfoTip text={`Above $0 and up to 10× today's cost (${unitCost(todayCost * 10)} / ${unit}). Read-only: nothing is saved.`} />
           <span className="filter-spacer" />
-          <span className="toggle-label">
-            Annual impact <b className={impact > 0 ? 'neg' : impact < 0 ? 'pos' : undefined}>{impact === 0 ? '$0' : `${impact > 0 ? '+' : '−'}${money(Math.abs(impact))}`}</b>
+          <span className="toggle-label impact-pair">
+            Annual cost change <Impact value={costChange} kind="cost" compact />
+            <span aria-hidden="true">·</span>
+            Margin impact <Impact value={marginImpact} kind="margin" compact />
           </span>
         </div>
         {invalid && <p className="field-error">Enter a cost above $0 and up to 10× today’s cost.</p>}
@@ -270,7 +286,8 @@ function IngredientsBody({
                 <th>Gross Profit % before</th>
                 <th>Gross Profit % after</th>
                 <th>Units produced (52 wk)</th>
-                <th>Annual impact</th>
+                <th>Annual cost change</th>
+                <th>Margin impact</th>
               </tr>
             </thead>
             <tbody>
@@ -291,9 +308,15 @@ function IngredientsBody({
                     <td>{pct(r.gpBefore)}</td>
                     <td>
                       {pct(r.gpAfter)} {simCost !== null && <Var value={pointsDiff(r.gpAfter, r.gpBefore)} />}
+                      {belowTarget(r.gpAfter, catBand(plu.cat)) && <span className="cell-sub">Below target</span>}
                     </td>
                     <td>{count(r.unitsProduced)}</td>
-                    <td>{r.annualImpact === 0 ? '$0' : `${r.annualImpact > 0 ? '+' : '−'}${money(Math.abs(r.annualImpact))}`}</td>
+                    <td>
+                      <Impact value={r.annualCostChange} kind="cost" />
+                    </td>
+                    <td>
+                      <Impact value={r.marginImpact} kind="margin" />
+                    </td>
                   </tr>
                 );
               })}

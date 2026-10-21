@@ -37,7 +37,7 @@ export function DefinitionsDrawer({ open, focusId, onClose }: { open: boolean; f
           <h2 id="defs-title">KPI definitions</h2>
           <div className="defs-intro">
             <p>
-              Prototype definitions for validation with Weis. They are not official definitions; the three required views are Category-Item Summary, Item Cost Over Time and Fresh Report; open questions are listed at the end. All figures are simulated.
+              Prototype definitions for validation with Weis. They are not official definitions; the five required views are Category-Item Summary, Item Cost Over Time, Ingredients View, Fresh Report and Known Loss Report; open questions are listed at the end. All figures are simulated.
             </p>
             <input
               className="text-input defs-search"
