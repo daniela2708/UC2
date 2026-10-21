@@ -4,7 +4,7 @@ import { getModel, NW } from '../data/generate';
 import { DEPTS, CATS, ingredientUnitCost, ITEMS, itemByName, recipeCostAt } from '../data/products';
 
 const ingredientUnitCostToday = (key: string) => ingredientUnitCost(key, LAST_COMPLETE_WEEK);
-import { compositeCostAt, costSeries, currentPoCost, newPoCost, newPoCostInfo, ordersOf, poCostForDays, poCostFromWeek, poTotals, poUnitCostWeek, recipeCost, recipeLines } from '../data/purchasing';
+import { compositeCostAt, costSeries, currentPoCost, newPoCost, newPoCostInfo, ordersOf, poCostForDays, poCostFromWeek, poTotals, poUnitCostWeek, recipeCost, recipeLines, supplyOf } from '../data/purchasing';
 import { clampIngredientCost, ingredientPickerItems, ingredientsSummary, pluUsing, resolveIngredientsItem, unitsProduced52, whereUsed } from './ingredients';
 import { PLANTED } from '../data/planted';
 import { STORES } from '../data/stores';
@@ -661,5 +661,36 @@ describe('sign convention: a cost increase is a margin loss', () => {
     // Sorted with the largest margin loss first.
     for (let k = 1; k < rows.length; k++) expect(rows[k].marginImpact).toBeGreaterThanOrEqual(rows[k - 1].marginImpact);
     for (const r of pluRows(buildScope(DEFAULT_STATE, ytd))) expect(r.marginImpact).toBeCloseTo(-r.costChange, 9);
+  });
+});
+
+describe('realism of the cost stories', () => {
+  const sc = buildScope(DEFAULT_STATE, ytd);
+  it('about 55–65 % of recipe PLUs are older than 6 months, a few older than 12, and 16 in. Pepperoni Pizza is the oldest and the top margin impact', () => {
+    const comp = ITEMS.filter((x) => x.composite);
+    const over6 = comp.filter((x) => x.composite!.ageMonths > 6).length / comp.length;
+    const over12 = comp.filter((x) => x.composite!.ageMonths > 12).length;
+    expect(over6).toBeGreaterThanOrEqual(0.55);
+    expect(over6).toBeLessThanOrEqual(0.65);
+    expect(over12).toBeGreaterThan(0);
+    expect(over12).toBeLessThanOrEqual(comp.length * 0.15);
+    const oldest = Math.max(...comp.map((x) => x.composite!.ageMonths));
+    expect(itemByName('16 in. Pepperoni Pizza').composite!.ageMonths).toBe(oldest);
+    expect(ITEMS[pluRows(sc)[0].item].name).toBe('16 in. Pepperoni Pizza');
+  });
+  it('most items cost more on POs than in HQ, about 25–30 % cost less, and pie pumpkins lead the margin impact', () => {
+    const rows = costWatchRows(sc);
+    const cheaper = rows.filter((r) => r.costChange < 0).length / rows.length;
+    expect(cheaper).toBeGreaterThanOrEqual(0.25);
+    expect(cheaper).toBeLessThanOrEqual(0.3);
+    expect(ITEMS[rows[0].item].name).toBe('Pie Pumpkins');
+  });
+  it('freight inside the New PO Cost explains part of the gap (HQ excludes freight)', () => {
+    for (const r of costWatchRows(sc)) {
+      if (r.next === null || r.freight === null) continue;
+      const fr = supplyOf(r.item).freightRate;
+      expect(r.freight).toBeCloseTo((r.next * fr) / (1 + fr), 9);
+      expect(r.freight).toBeLessThan(r.next);
+    }
   });
 });

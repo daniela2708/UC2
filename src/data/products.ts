@@ -246,15 +246,24 @@ const RECIPES: Record<string, (name: string) => [string, number][]> = {
   },
 };
 
-/** Month a composite PLU's cost was last updated. Most are 03/2025–11/2025; one in five was refreshed in 2026. */
+/**
+ * Month a composite PLU's cost was last updated. The Deli team re-costs recipes about once a year, so at 10/2026:
+ * about half within the last 6 months (04–09/2026), about 40 % 7–12 months ago (10/2025–03/2026) and about one in
+ * ten older than a year (04–09/2025). 16 in. Pepperoni Pizza (03/2025) is the oldest.
+ */
 const PLANTED_UPDATE: Record<string, [number, number]> = { '16 in. Pepperoni Pizza': [2025, 3] };
 
 function updateMonth(name: string, i: number): [number, number] {
   if (PLANTED_UPDATE[name]) return PLANTED_UPDATE[name];
   if (/Slice$/.test(name)) return updateMonth(name.replace(/ Slice$/, ''), ITEM_BY_NAME_EARLY.get(name.replace(/ Slice$/, '')) ?? i);
   const h = hash01(i, 401);
-  if (h < 0.2) return [2026, 1 + Math.floor(hash01(i, 402) * 8)];
-  return [2025, 3 + Math.floor(hash01(i, 403) * 9)];
+  const k = hash01(i, 402);
+  if (h < 0.5) return [2026, 4 + Math.floor(k * 6)];
+  if (h < 0.9) {
+    const m = 10 + Math.floor(k * 6); // 10/2025 … 03/2026
+    return m <= 12 ? [2025, m] : [2026, m - 12];
+  }
+  return [2025, 4 + Math.floor(k * 6)];
 }
 
 const AS_OF_MONTHS = 2026 * 12 + 10;

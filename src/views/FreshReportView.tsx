@@ -647,6 +647,10 @@ export function FreshReportView({ openDefinitions }: ViewProps) {
           key={`${scope.storeKey.length}-${state.districts.join()}`}
           exportTitle={`Fresh Report ${rangeLabel}`}
           tableId="fresh"
+          presets={[
+            { label: 'Budget focus', keys: ['gross', 'gmr', 'purch', 'budget', 'vsBudget'] },
+            { label: 'Loss focus', keys: ['gross', 'gmr', 'loss', 'mal'] },
+          ]}
         />
         <p className="card-caption" style={{ marginTop: 10 }}>
           Select a row to see its purchases breakdown.

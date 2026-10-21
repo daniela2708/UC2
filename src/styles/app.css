@@ -2043,3 +2043,7 @@ b.pos {
   gap: 6px;
   align-items: baseline;
 }
+.foot-actions {
+  display: inline-flex;
+  gap: 12px;
+}

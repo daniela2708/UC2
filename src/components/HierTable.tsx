@@ -319,17 +319,24 @@ function ColumnChooser({
                   <label key={c.key} className="check-row">
                     <input type="checkbox" checked={visible.has(c.key)} onChange={() => toggle(c.key)} />
                     {c.label}
-                    {c.defaultHidden && <span className="chip status-proposed">Extra</span>}
+                    {c.defaultHidden && <span className="chip status-proposed">Optional</span>}
                   </label>
                 ))}
               </fieldset>
             ))}
           </div>
           <div className="popover-foot">
-            <span>{visible.size} of {columns.length} columns · Excel always exports all</span>
-            <button type="button" className="btn-link" onClick={onReset}>
-              Reset to default
-            </button>
+            <span>
+              {visible.size} of {columns.length} columns · Excel always exports all
+            </span>
+            <span className="foot-actions">
+              <button type="button" className="btn-link" onClick={() => onChange(columns.map((c) => c.key))}>
+                Show all
+              </button>
+              <button type="button" className="btn-link" onClick={onReset}>
+                Workbook default
+              </button>
+            </span>
           </div>
         </div>
       )}

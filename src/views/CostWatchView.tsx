@@ -23,6 +23,12 @@ const PO_COLUMNS: HierCol[] = [
   { key: 'updated', label: 'HQ cost updated', group: 'Cost' },
   { key: 'next', label: 'New PO Cost (last week)', title: 'Period-based PO cost of the last complete week: PO spend ÷ volume purchased, freight included (Proposed). "as of W41" when nothing was bought that week.', group: 'Cost' },
   { key: 'gap', label: 'Cost gap %', group: 'Cost' },
+  {
+    key: 'freight',
+    label: 'of which freight',
+    title: 'Freight per unit inside the New PO Cost. The HQ cost excludes freight, so this part of the gap is expected; the rest is a real cost change.',
+    group: 'Cost',
+  },
   { key: 'vendors', label: 'Vendors', group: 'Cost' },
   { key: 'units', label: 'Units sold (4 wk)', group: 'Sales' },
   { key: 'gmHq', label: 'GM Rate on HQ cost', group: 'Margin' },
@@ -94,6 +100,18 @@ export function CostWatchView({ openDefinitions }: ViewProps) {
             moneyUnit(r.next)
           ),
         gap: <Var value={r.gap} kind="pct" invert />,
+        freight: (
+          <>
+            {moneyUnit(r.freight)}
+            <span className="cell-sub">
+              {r.next !== null && r.freight !== null && r.next > r.hq
+                ? `${pct(Math.min(1, r.freight / (r.next - r.hq)), 0)} of the gap`
+                : r.costFell
+                  ? 'Cost fell since HQ update'
+                  : 'PO cheaper than HQ'}
+            </span>
+          </>
+        ),
         vendors: (
           <span title={r.vendors.join(', ')}>
             {r.vendors.length}
@@ -107,7 +125,7 @@ export function CostWatchView({ openDefinitions }: ViewProps) {
         cost: <Impact value={r.costChange} kind="cost" />,
         impact: <Impact value={r.marginImpact} kind="margin" />,
       },
-      sort: { label: it.name, type: it.costType, hq: r.hq, updated: -r.hqAgeMonths, next: r.next, gap: r.gap, vendors: r.vendors.length, units: r.units4w, gmHq: r.gmHq, gmPo: r.gmPo, over, cost: r.costChange, impact: r.marginImpact },
+      sort: { label: it.name, type: it.costType, hq: r.hq, updated: -r.hqAgeMonths, next: r.next, gap: r.gap, freight: r.freight, vendors: r.vendors.length, units: r.units4w, gmHq: r.gmHq, gmPo: r.gmPo, over, cost: r.costChange, impact: r.marginImpact },
     };
   });
 
@@ -360,7 +378,12 @@ export function CostWatchView({ openDefinitions }: ViewProps) {
           {mode === 'po' ? 'PLU and random-weight items · largest margin loss first · click a row to open it' : 'Recipe family › PLU › Ingredient · largest margin loss first'}
         </p>
         {mode === 'po' ? (
-          <HierTable key="po" tableId="costpo" hierarchy="SKU / PLU" columns={PO_COLUMNS} defaultSort={{ key: 'impact', dir: 'asc' }} rows={poTable} exportTitle="Cost Watch PO vs HQ" empty="No PLU or random-weight items for the current filters." />
+          <HierTable
+            key="po"
+            tableId="costpo"
+            presets={[{ label: 'Gap explained', keys: ['hq', 'next', 'gap', 'freight', 'cost', 'impact'] }]}
+            hierarchy="SKU / PLU"
+            columns={PO_COLUMNS} defaultSort={{ key: 'impact', dir: 'asc' }} rows={poTable} exportTitle="Cost Watch PO vs HQ" empty="No PLU or random-weight items for the current filters." />
         ) : (
           <HierTable
             key="recipe"

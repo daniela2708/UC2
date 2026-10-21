@@ -45,7 +45,7 @@ import {
   type Uom,
 } from './kpis';
 import { itemIndices, storeIndices, type CostSource, type FilterState, type ResolvedRange } from './filters';
-import { hqUnitCostWeek, newPoCostInfo, poCostFromWeek, poTotals, poUnitCostWeek, supplyOf } from '../data/purchasing';
+import { costFellSinceHq, hqUnitCostWeek, newPoCostInfo, poCostFromWeek, poTotals, poUnitCostWeek, supplyOf } from '../data/purchasing';
 
 // ---------------------------------------------------------------- Memo
 
@@ -1497,6 +1497,10 @@ export interface CostWatchRow {
   next: number | null;
   /** Week the New PO Cost comes from (the last complete week unless nothing was bought that week). */
   nextWeek: number;
+  /** Freight per unit inside the New PO Cost (the HQ cost excludes freight). */
+  freight: number | null;
+  /** HQ was set at a seasonal or commodity high that has since come down. */
+  costFell: boolean;
   gap: number | null;
   vendors: string[];
   units4w: number;
@@ -1542,6 +1546,8 @@ export function costWatchRows(scope: Scope): CostWatchRow[] {
         hqAgeMonths: ageMonths,
         next,
         nextWeek: info.week,
+        freight: next === null ? null : (next * sup.freightRate) / (1 + sup.freightRate),
+        costFell: costFellSinceHq(i),
         gap: next === null || hq <= 0 ? null : next / hq - 1,
         vendors: sup.vendors.map((v) => v.name),
         units4w: units,

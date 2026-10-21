@@ -104,6 +104,12 @@ export const PURCHASING_STORIES = {
 
 const supplyCache = new Map<number, ItemSupply>();
 
+/** Items whose cost fell after HQ was last updated (end of season, falling commodity costs). */
+export function costFellSinceHq(i: number): boolean {
+  return ITEMS[i].costType !== 'UPC' && !ITEMS[i].composite && hash01(i, 713) < FELL_SHARE;
+}
+const FELL_SHARE = 0.2;
+
 export function supplyOf(i: number): ItemSupply {
   const hit = supplyCache.get(i);
   if (hit) return hit;
@@ -153,7 +159,8 @@ export function supplyOf(i: number): ItemSupply {
     const w = weekOfDay(hqUpdatedDay);
     let c = 0;
     for (let x = w - 2; x <= w + 1; x++) c += m.poCost[i * NW + Math.max(0, Math.min(LAST_COMPLETE_WEEK, x))] / 4;
-    hqCost = c;
+    // Some HQ costs were set at a seasonal or commodity high that has since come down, so POs now cost less.
+    hqCost = c * (costFellSinceHq(i) ? 1.1 + 0.1 * hash01(i, 714) : 1);
   }
   const s: ItemSupply = {
     item: i,
