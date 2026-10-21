@@ -4,6 +4,7 @@ import { getModel, NW } from '../data/generate';
 import { DEPTS, CATS, ITEMS, itemByName } from '../data/products';
 import { compositeCostAt, costSeries, currentPoCost, newPoCost, poUnitCostWeek, recipeCost, recipeLines } from '../data/purchasing';
 import { PLANTED } from '../data/planted';
+import { STORES } from '../data/stores';
 import { belowTarget, catBand } from '../data/targets';
 import { mulberry32, SEED } from '../data/prng';
 import { BASE_TIME, DEFAULT_STATE, fromQuery, resolveTime, toQuery, unusedFilters } from './filters';
@@ -33,16 +34,22 @@ import {
   weightedUnitCost,
   yoyGrowth,
 } from './kpis';
+import { csvCell, csvText, toCsv } from './csv';
+import { IT_HEAD, itEntryOf, itRows, itSheet } from './itReport';
 import {
+  addAgg,
   buildScope,
+  emptyAgg,
   findFlags,
+  itemAggregates,
+  newItemsWatch,
+  storeKnownLoss,
   freshStoreDays,
   freshStoreWeeks,
   isEntryError,
   itemPurchaseFactor,
   itemPurchasesWeek,
   MERCH_CHANNELS,
-  newItemsWatch,
 } from './selectors';
 
 const ytd = resolveTime(BASE_TIME);
@@ -176,13 +183,21 @@ describe('simulator', () => {
 });
 
 describe('High Loss Flag tiers at the boundaries', () => {
-  it('entry error needs more than 20× typical units; the rule needs more than the $ and % thresholds', () => {
+  it('High Loss Flag is loss higher than $1,000 in a week: 999.99 and 1000 are not flagged, 1000.01 is', () => {
+    expect(highLossFlag(999.99, 0, DEFAULT_LOSS_RULE)).toBe(false);
+    expect(highLossFlag(1000, 0, DEFAULT_LOSS_RULE)).toBe(false);
+    expect(highLossFlag(1000.01, 0, DEFAULT_LOSS_RULE)).toBe(true);
+    // The 26-week average does not matter unless the proposed rule is switched on.
+    expect(highLossFlag(1000.01, 5000, DEFAULT_LOSS_RULE)).toBe(true);
+    expect(highLossFlag(1500, 750, { ...DEFAULT_LOSS_RULE, avg: true })).toBe(false);
+    expect(highLossFlag(1500, 749, { ...DEFAULT_LOSS_RULE, avg: true })).toBe(true);
+  });
+  it('entry error label needs more than 20× typical units', () => {
     expect(likelyEntryError(200, 10)).toBe(false);
     expect(likelyEntryError(200.01, 10)).toBe(true);
-    expect(highLossFlag(1000, 100, DEFAULT_LOSS_RULE)).toBe(false);
-    expect(highLossFlag(1000.01, 100, DEFAULT_LOSS_RULE)).toBe(true);
-    expect(highLossFlag(1500, 750, DEFAULT_LOSS_RULE)).toBe(false);
-    expect(highLossFlag(1500, 749, DEFAULT_LOSS_RULE)).toBe(true);
+  });
+  it('every flag in the data is above $1,000 for one item-store-week', () => {
+    for (const f of findFlags(buildScope(DEFAULT_STATE, ytd))) expect(f.cost).toBeGreaterThan(1000);
   });
   it('about 30 % of flags are likely entry errors, and the salmon fat-finger tops the list', () => {
     const flags = findFlags(buildScope(DEFAULT_STATE, ytd));
@@ -195,24 +210,6 @@ describe('High Loss Flag tiers at the boundaries', () => {
     const flags = findFlags(buildScope(DEFAULT_STATE, ytd));
     const soup = flags.find((f) => ITEMS[f.item].name === PLANTED.soup.item && f.week === PLANTED.soup.week);
     expect(soup && isEntryError(soup)).toBe(true);
-  });
-});
-
-describe('new items watch', () => {
-  it('counts week 12 in and week 13 out', () => {
-    expect(weeksOnSale(100, 111)).toBe(12);
-    expect(inNewItemWindow(weeksOnSale(100, 111))).toBe(true);
-    expect(inNewItemWindow(weeksOnSale(100, 112))).toBe(false);
-    expect(inNewItemWindow(weeksOnSale(100, 99))).toBe(false);
-  });
-  it('lists FY2026 launches within the window and nothing sells before launch', () => {
-    const rows = newItemsWatch(buildScope(DEFAULT_STATE, ytd));
-    expect(rows.length).toBeGreaterThan(4);
-    const m = getModel();
-    for (const r of rows) {
-      expect(r.weeks).toBeLessThanOrEqual(12);
-      expect(m.sales[r.item * NW + r.launchWeek - 1]).toBe(0);
-    }
   });
 });
 
@@ -336,7 +333,7 @@ describe('purchases reconcile', () => {
 
 describe('input clamps and URL state', () => {
   it('clamps loss rule, expected loss and rejects bad values', () => {
-    expect(clampLossRule({ dollars: -50, pct: -1 })).toEqual({ dollars: 250, pct: 0 });
+    expect(clampLossRule({ dollars: -50, pct: -1 })).toEqual({ dollars: 250, pct: 0, avg: false });
     expect(clampExpectedLoss(-0.2)).toBe(0);
     expect(clampExpectedLoss(0.9)).toBe(0.3);
     expect(clampExpectedLoss(Number.NaN)).toBeNull();
@@ -370,5 +367,117 @@ describe('target bands', () => {
     expect(belowTarget(0.44, catBand(roma.cat))).toBe(true);
     expect(belowTarget(0.46, catBand(roma.cat))).toBe(false);
     expect(belowTarget(null, catBand(roma.cat))).toBe(false);
+  });
+});
+
+describe('Known Loss Report', () => {
+  const scope = buildScope(DEFAULT_STATE, ytd);
+  const items = itemAggregates(scope, DEFAULT_STATE.costBasis, DEFAULT_STATE.costSource);
+  const total = emptyAgg();
+  for (const a of items) addAgg(total, a);
+  type Key = 'gross' | 'ea' | 'lb' | 'loss' | 'lossUnitsEa' | 'lossUnitsLb';
+  const KEYS: Key[] = ['gross', 'ea', 'lb', 'loss', 'lossUnitsEa', 'lossUnitsLb'];
+  /** Exact up to floating-point rounding. */
+  const same = (a: number, b: number) => expect(Math.abs(a - b)).toBeLessThanOrEqual(1e-9 * Math.max(1, Math.abs(b)));
+  const reconcile = (sc: typeof scope, aggs: typeof items, item: number) => {
+    const rows = storeKnownLoss(sc, item);
+    const t = emptyAgg();
+    for (const a of aggs) if (item < 0 || a.item === item) addAgg(t, a);
+    for (const k of KEYS) same(rows.reduce((x, r) => x + r[k], 0), t[k]);
+    expect(rows.reduce((x, r) => x + r.flags, 0)).toBe(findFlags(sc).filter((f) => item < 0 || f.item === item).length);
+    return rows;
+  };
+  it('store rows add up exactly to the item table for all items (sales, volume, known loss $ and units)', () => {
+    reconcile(scope, items, -1);
+    const incl = buildScope({ ...DEFAULT_STATE, flagged: 'incl' }, ytd);
+    reconcile(incl, itemAggregates(incl, DEFAULT_STATE.costBasis, DEFAULT_STATE.costSource), -1);
+  });
+  it('the SKU filter narrows the store table to one item and still adds up exactly, soup included', () => {
+    const salmon = itemByName(PLANTED.fatFinger.item).idx;
+    expect(reconcile(scope, items, salmon).length).toBeLessThanOrEqual(scope.stores.length);
+    const soup = itemByName(PLANTED.soup.item).idx;
+    reconcile(scope, items, soup);
+    const w40 = resolveTime({ ...BASE_TIME, mode: 'fiscal', grain: 'week', weekStart: weekStartDay(PLANTED.soup.week) });
+    for (const flagged of ['excl', 'incl'] as const) {
+      const sc = buildScope({ ...DEFAULT_STATE, flagged }, w40);
+      reconcile(sc, itemAggregates(sc, DEFAULT_STATE.costBasis, DEFAULT_STATE.costSource), soup);
+      // A store subset that includes store 116 also reconciles.
+      const sub = buildScope({ ...DEFAULT_STATE, flagged, stores: [PLANTED.soup.store, 152, 217] }, w40);
+      reconcile(sub, itemAggregates(sub, DEFAULT_STATE.costBasis, DEFAULT_STATE.costSource), soup);
+    }
+  });
+  it('the soup story is in the item × store × week data: chain units do not change', () => {
+    const m = getModel();
+    const soup = itemByName(PLANTED.soup.item).idx;
+    const adj = m.salesAdjIndex.get(soup * NW + PLANTED.soup.week)!;
+    same(adj.units.reduce((a, b) => a + b, 0), 0);
+  });
+  it('keeps the soup, salmon and strawberries cases findable', () => {
+    const flags = findFlags(scope);
+    const find = (name: string, store: number, week: number) => flags.find((f) => ITEMS[f.item].name === name && STORES[f.store].id === store && f.week === week);
+    expect(find(PLANTED.soup.item, PLANTED.soup.store, PLANTED.soup.week)).toBeTruthy();
+    expect(find(PLANTED.fatFinger.item, PLANTED.fatFinger.store, PLANTED.fatFinger.week)).toBeTruthy();
+    expect(find(PLANTED.extreme.item, PLANTED.extreme.store, PLANTED.extreme.week)?.extreme).toBe(true);
+    const soupItem = itemByName(PLANTED.soup.item).idx;
+    const w40 = resolveTime({ ...BASE_TIME, mode: 'fiscal', grain: 'week', weekStart: weekStartDay(PLANTED.soup.week) });
+    const rowOf = (flagged: 'excl' | 'incl') =>
+      storeKnownLoss(buildScope({ ...DEFAULT_STATE, flagged }, w40), soupItem).find((r) => STORES[r.store].id === PLANTED.soup.store)!;
+    const incl = rowOf('incl');
+    expect(incl.ea).toBeCloseTo(PLANTED.soup.unitsSold, 6);
+    expect(incl.lossUnitsEa).toBeGreaterThan(3900);
+    expect(incl.flags).toBe(1);
+    // Excluded by default as a likely entry error, but still flagged on the store row.
+    const excl = rowOf('excl');
+    expect(excl.lossUnitsEa).toBeLessThan(50);
+    expect(excl.errFlags).toBe(1);
+  });
+});
+
+describe('IT review list export', () => {
+  it('has item, store, week, units, $ and reason, with numbers as numbers', () => {
+    const f = findFlags(buildScope(DEFAULT_STATE, ytd)).find((x) => ITEMS[x.item].name === PLANTED.soup.item)!;
+    const rows = itRows([itEntryOf(f)]);
+    expect(IT_HEAD).toEqual(['Item', 'SKU Number', 'Store Num', 'District', 'Week', 'Week beginning', 'Known Loss (Units)', 'UoM', 'Known Loss ($, at cost)', 'Reason']);
+    const [name, , store, , week, , units, uom, cost, reason] = rows[0];
+    expect(name).toBe(PLANTED.soup.item);
+    expect(store).toBe(String(PLANTED.soup.store));
+    expect(week).toContain(`W${String((PLANTED.soup.week % 52) + 1)}`);
+    expect(typeof units).toBe('number');
+    expect(units as number).toBeGreaterThan(3900);
+    expect(uom).toBe('ea');
+    expect(typeof cost).toBe('number');
+    expect(reason).toBe('Likely entry error');
+    expect(itSheet([itEntryOf(f)]).rows).toHaveLength(1);
+  });
+  it('guards text fields against formulas and leaves numbers numeric', () => {
+    for (const bad of ['=HYPERLINK("x")', '+1', '-cmd', '@SUM(A1)', '\tTab', '\rCR']) expect(csvText(bad).replace(/^"/, '').startsWith("'")).toBe(true);
+    expect(csvText('Chicken Noodle Soup 16 oz')).toBe('Chicken Noodle Soup 16 oz');
+    expect(csvText('Wings, 12 ct')).toBe('"Wings, 12 ct"');
+    expect(csvText('=A1,"x"')).toBe('"\'=A1,""x"""');
+    expect(csvCell(-12.5)).toBe('-12.5');
+    expect(csvCell(4000)).toBe('4000');
+    expect(csvCell(null)).toBe('');
+    expect(toCsv(['Item', 'Known Loss ($)'], [['-Soup', -3.25]])).toBe("Item,Known Loss ($)\r\n'-Soup,-3.25\r\n");
+  });
+});
+
+describe('new items watch (Known Loss Report)', () => {
+  it('counts week 12 in and week 13 out', () => {
+    expect(weeksOnSale(100, 111)).toBe(12);
+    expect(inNewItemWindow(weeksOnSale(100, 111))).toBe(true);
+    expect(inNewItemWindow(weeksOnSale(100, 112))).toBe(false);
+    expect(inNewItemWindow(weeksOnSale(100, 99))).toBe(false);
+  });
+  it('lists FY2026 launches in their first 12 weeks; nothing sells before launch and weeks add up', () => {
+    const rows = newItemsWatch(buildScope(DEFAULT_STATE, ytd));
+    expect(rows.length).toBeGreaterThan(4);
+    const m = getModel();
+    for (const r of rows) {
+      expect(r.weeks).toBeLessThanOrEqual(12);
+      expect(r.weekly).toHaveLength(r.weeks);
+      expect(m.sales[r.item * NW + r.launchWeek - 1]).toBe(0);
+      expect(r.weekly.reduce((a, w) => a + w.loss, 0)).toBeCloseTo(r.loss, 6);
+      expect(r.weekly.reduce((a, w) => a + w.volume, 0)).toBeCloseTo(r.volume, 6);
+    }
   });
 });

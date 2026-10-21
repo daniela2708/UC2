@@ -140,15 +140,19 @@ describe('loss', () => {
     expect(lossPctOfSales(30, 1000)).toBe(0.03);
     expect(lossPctOfSales(30, 0)).toBeNull();
   });
-  it('flags only when both the $ and the 26-week conditions hold', () => {
+  it('the official flag is weekly loss above $1,000; the 26-week rule applies only when switched on', () => {
     expect(highLossFlag(11_700, 110, DEFAULT_LOSS_RULE)).toBe(true);
     expect(highLossFlag(900, 50, DEFAULT_LOSS_RULE)).toBe(false);
-    expect(highLossFlag(1500, 800, DEFAULT_LOSS_RULE)).toBe(false);
-    expect(highLossFlag(1500, null, DEFAULT_LOSS_RULE)).toBe(false);
+    expect(highLossFlag(1500, 800, DEFAULT_LOSS_RULE)).toBe(true);
+    expect(highLossFlag(1500, null, DEFAULT_LOSS_RULE)).toBe(true);
+    const withAvg = { ...DEFAULT_LOSS_RULE, avg: true };
+    expect(highLossFlag(1500, 800, withAvg)).toBe(false);
+    expect(highLossFlag(1500, 749, withAvg)).toBe(true);
+    expect(highLossFlag(1500, null, withAvg)).toBe(false);
   });
   it('clamps thresholds outside their range', () => {
-    expect(clampLossRule({ dollars: 5, pct: -3 })).toEqual({ dollars: LOSS_RULE_LIMITS.dollars.min, pct: LOSS_RULE_LIMITS.pct.min });
-    expect(clampLossRule({ dollars: 1e9, pct: 99 })).toEqual({ dollars: LOSS_RULE_LIMITS.dollars.max, pct: LOSS_RULE_LIMITS.pct.max });
+    expect(clampLossRule({ dollars: 5, pct: -3 })).toEqual({ dollars: LOSS_RULE_LIMITS.dollars.min, pct: LOSS_RULE_LIMITS.pct.min, avg: false });
+    expect(clampLossRule({ dollars: 1e9, pct: 99, avg: 'yes' })).toEqual({ dollars: LOSS_RULE_LIMITS.dollars.max, pct: LOSS_RULE_LIMITS.pct.max, avg: false });
     expect(clampLossRule({ dollars: 'abc', pct: Number.NaN })).toEqual(DEFAULT_LOSS_RULE);
   });
   it('marks likely entry errors above 20× typical units', () => {

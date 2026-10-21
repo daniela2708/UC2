@@ -1,8 +1,10 @@
-import { RotateCcw } from 'lucide-react';
-import { useId } from 'react';
+import { CalendarDays, RotateCcw } from 'lucide-react';
+import { useEffect, useId, useRef, useState } from 'react';
 import {
   AS_OF_DAY,
   dayFromISO,
+  dayFromUS,
+  formatDay,
   FISCAL_YEARS,
   HOLIDAYS,
   holidayAvailable,
@@ -36,23 +38,75 @@ import { Field, InfoTip, Segmented } from './ui';
 
 const COMPOSITE_DEPTS = new Set(['Deli', 'Bakery']);
 
+/** Date field in MM/DD/YYYY (US format) regardless of the browser locale; the calendar button opens the native picker. */
 function DateInput({ label, value, onChange, disabledReason }: { label: string; value: number; onChange: (d: number) => void; disabledReason?: string }) {
   const id = useId();
+  const [text, setText] = useState(formatDay(value));
+  const [invalid, setInvalid] = useState(false);
+  const picker = useRef<HTMLInputElement>(null);
+  useEffect(() => {
+    setText(formatDay(value));
+    setInvalid(false);
+  }, [value]);
+  const commit = () => {
+    const d = dayFromUS(text);
+    if (d === null) {
+      setInvalid(text.trim() !== formatDay(value));
+      return;
+    }
+    setInvalid(false);
+    const c = clampDay(d);
+    setText(formatDay(c));
+    if (c !== value) onChange(c);
+  };
   return (
     <Field label={label} htmlFor={id} disabledReason={disabledReason}>
-      <input
-        id={id}
-        className="text-input"
-        type="date"
-        min={isoFromDay(0)}
-        max={isoFromDay(AS_OF_DAY)}
-        value={isoFromDay(value)}
-        disabled={!!disabledReason}
-        onChange={(e) => {
-          const d = dayFromISO(e.target.value);
-          if (d !== null) onChange(clampDay(d));
-        }}
-      />
+      <div className={`date-field${invalid ? ' is-invalid' : ''}`}>
+        <input
+          id={id}
+          className="text-input"
+          type="text"
+          inputMode="numeric"
+          placeholder="mm/dd/yyyy"
+          maxLength={10}
+          aria-invalid={invalid}
+          title={invalid ? 'Use mm/dd/yyyy, from 12/31/2023 to 10/18/2026' : 'mm/dd/yyyy'}
+          value={text}
+          disabled={!!disabledReason}
+          onChange={(e) => setText(e.target.value.replace(/[^\d/]/g, '').slice(0, 10))}
+          onBlur={commit}
+          onKeyDown={(e) => e.key === 'Enter' && commit()}
+        />
+        <button
+          type="button"
+          className="date-btn"
+          aria-label={`Pick ${label.toLowerCase()} from a calendar`}
+          disabled={!!disabledReason}
+          onClick={() => {
+            try {
+              picker.current?.showPicker();
+            } catch {
+              picker.current?.focus();
+            }
+          }}
+        >
+          <CalendarDays size={14} aria-hidden="true" />
+        </button>
+        <input
+          ref={picker}
+          className="date-native"
+          type="date"
+          tabIndex={-1}
+          aria-hidden="true"
+          min={isoFromDay(0)}
+          max={isoFromDay(AS_OF_DAY)}
+          value={isoFromDay(value)}
+          onChange={(e) => {
+            const d = dayFromISO(e.target.value);
+            if (d !== null) onChange(clampDay(d));
+          }}
+        />
+      </div>
     </Field>
   );
 }

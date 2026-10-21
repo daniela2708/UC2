@@ -217,6 +217,20 @@ export interface LossEvent {
   kind: 'entry' | 'operational' | 'overstock' | 'planted';
 }
 
+/**
+ * Units sold moved between stores for one item-week, so a planted store-level story is part of the
+ * item × store × week data. Per-store units add to zero, so chain totals do not change; every selector
+ * that splits sales by store adds these units (valued at the item-week's average price).
+ */
+export interface SalesAdj {
+  item: number;
+  week: number;
+  /** Units added to each store index (negative where taken away). */
+  units: Float64Array;
+  /** Chain average gross price per unit that week. */
+  price: number;
+}
+
 export interface Model {
   /** item × week */
   sales: Float32Array;
@@ -244,6 +258,9 @@ export interface Model {
   lossPosted: Uint8Array;
   events: LossEvent[];
   eventIndex: Map<number, number>;
+  /** Item-store-week sales corrections (planted stories), by item × week. */
+  salesAdj: SalesAdj[];
+  salesAdjIndex: Map<number, SalesAdj>;
   /** item × store loss affinity. */
   lossAff: Float32Array;
   /** store × department loss propensity (handling, staffing, layout differ by store and department). */
@@ -453,12 +470,36 @@ export function buildModel(): Model {
     lossPosted,
     events: [],
     eventIndex: new Map(),
+    salesAdj: [],
+    salesAdjIndex: new Map(),
     lossAff,
     storeDeptLoss,
   };
   model.events = buildEvents(model);
+  model.salesAdj = buildSalesAdj(model);
+  for (const a of model.salesAdj) model.salesAdjIndex.set(a.item * NW + a.week, a);
   model.events.forEach((e, n) => model.eventIndex.set(cellKey(e.item, e.store, e.week), n));
   return model;
+}
+
+function buildSalesAdj(m: Model): SalesAdj[] {
+  // Deli soup: store 116 sold a single unit in W40; the rest of that week's units sold in the other stores.
+  const p = PLANTED.soup;
+  const it = ITEMS.find((x) => x.name === p.item);
+  const st = STORE_BY_ID.get(p.store);
+  if (!it || !st) return [];
+  const c = it.cat;
+  const w = p.week;
+  const tot = m.shareTot[c * NW + w];
+  const chainUnits = m.units[it.idx * NW + w];
+  if (tot <= 0 || chainUnits <= 0) return [];
+  const f = (s: number) => m.share[(c * NS + s) * NW + w] / tot;
+  const delta = p.unitsSold - chainUnits * f(st.idx);
+  let others = 0;
+  for (let s = 0; s < NS; s++) if (s !== st.idx) others += m.share[(c * NS + s) * NW + w];
+  const units = new Float64Array(NS);
+  for (let s = 0; s < NS; s++) units[s] = s === st.idx ? delta : others > 0 ? (-delta * m.share[(c * NS + s) * NW + w]) / others : 0;
+  return [{ item: it.idx, week: w, units, price: m.sales[it.idx * NW + w] / chainUnits }];
 }
 
 /** Baseline weekly known loss at cost for one item in one store (no events). */

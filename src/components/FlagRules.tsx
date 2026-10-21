@@ -6,7 +6,10 @@ import { clampLossRule, DEFAULT_LOSS_RULE, ENTRY_ERROR_MULTIPLE, LOSS_RULE_LIMIT
 import { EXTREME_ENTRY_DOLLARS } from '../data/planted';
 import { Field, StatusChip } from './ui';
 
-/** Editable High Loss Flag thresholds (workbook open question 3). Values are validated and clamped. */
+/**
+ * High Loss Flag rules. The workbook flag is weekly loss above $1,000; the reason labels and the
+ * 26-week rule are proposed refinements. Values are validated and clamped.
+ */
 export function FlagRulesForm() {
   const { state, update } = useFilters();
   const [dollars, setDollars] = useState(String(state.rule.dollars));
@@ -17,17 +20,16 @@ export function FlagRulesForm() {
   }, [state.rule]);
   const commit = (d: string, p: string) => {
     if (!/^\d{1,7}$/.test(d.trim()) || !/^\d{1,5}$/.test(p.trim())) return;
-    update((s) => ({ ...s, rule: clampLossRule({ dollars: Number(d), pct: Number(p) / 100 }) }));
+    update((s) => ({ ...s, rule: clampLossRule({ dollars: Number(d), pct: Number(p) / 100, avg: s.rule.avg }) }));
   };
   return (
     <div className="flag-rules">
       <p className="rule-line">
-        <span className="chip error">Likely entry error</span> loss units above {ENTRY_ERROR_MULTIPLE}× the item-store typical weekly units, or above{' '}
-        {money(EXTREME_ENTRY_DOLLARS)}.
+        <b>High Loss Flag</b> (workbook): known loss higher than <b>{money(state.rule.dollars)}</b> for an item in a store in a given week.
       </p>
       <p className="rule-line">
-        <span className="chip amber">High loss to review</span> weekly loss above <b>{money(state.rule.dollars)}</b> AND more than{' '}
-        <b>{Math.round(state.rule.pct * 100)} %</b> above the item-store <b>26-week average</b>.
+        Reason labels <StatusChip status="Proposed" />: <span className="chip error">Likely entry error</span> loss units above {ENTRY_ERROR_MULTIPLE}× the
+        item-store typical weekly units, or above {money(EXTREME_ENTRY_DOLLARS)}; otherwise <span className="chip amber">High loss to review</span>.
       </p>
       <div className="rules-grid">
         <Field label={`Threshold $ (${LOSS_RULE_LIMITS.dollars.min}–${LOSS_RULE_LIMITS.dollars.max.toLocaleString('en-US')})`} htmlFor="rule-dollars">
@@ -50,6 +52,7 @@ export function FlagRulesForm() {
             className="text-input"
             inputMode="numeric"
             maxLength={5}
+            disabled={!state.rule.avg}
             value={pctText}
             onChange={(e) => {
               setPctText(e.target.value.slice(0, 5));
@@ -62,6 +65,12 @@ export function FlagRulesForm() {
           Reset rule
         </button>
       </div>
+      <label className="check-row rule-line">
+        <input type="checkbox" checked={state.rule.avg} onChange={(e) => update((s) => ({ ...s, rule: { ...s.rule, avg: e.target.checked } }))} />
+        <span>
+          Also require loss more than <b>{Math.round(state.rule.pct * 100)} %</b> above the item-store <b>26-week average</b> <StatusChip status="Proposed" />
+        </span>
+      </label>
       <p className="rule-line muted">Today reports hide any entry above about $1,000 per SKU.</p>
     </div>
   );

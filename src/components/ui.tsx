@@ -139,3 +139,25 @@ export function CellBar({
     </span>
   );
 }
+
+/** High Loss Flag (weekly loss above $1,000) with the proposed reason labels as a secondary line. */
+export function FlagCell({ flags, errors, extra }: { flags: number; errors: number; extra?: ReactNode }) {
+  if (!flags && !extra) return null;
+  const review = flags - errors;
+  const reasons = [errors > 0 ? `${errors} likely entry error${errors === 1 ? '' : 's'}` : '', review > 0 ? `${review} to review` : ''].filter(Boolean).join(' · ');
+  return (
+    <span className="flag-cell">
+      {flags > 0 && (
+        <span className="flag-stack">
+          <span className={`chip ${errors > 0 ? 'error' : 'amber'}`}>
+            {flags} flag{flags === 1 ? '' : 's'}
+          </span>
+          <span className="flag-reason" title="Reason labels (Proposed)">
+            {reasons}
+          </span>
+        </span>
+      )}
+      {extra}
+    </span>
+  );
+}

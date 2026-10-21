@@ -2,6 +2,7 @@ import { Component, useCallback, useState, type ErrorInfo, type ReactNode } from
 import { BottomBar } from './components/Blocks';
 import { DefinitionsDrawer } from './components/DefinitionsDrawer';
 import { SimulatorProvider } from './components/Simulator';
+import { ItReportProvider } from './components/ItReport';
 import { FilterCard } from './components/FilterCard';
 import { Disclaimer, Header } from './components/Header';
 import { actions, FilterProvider, useFilters } from './lib/filterStore';
@@ -9,7 +10,7 @@ import { CategoryItemView } from './views/CategoryItemView';
 import { FreshReportView } from './views/FreshReportView';
 import { CostWatchView } from './views/CostWatchView';
 import { ItemCostView } from './views/ItemCostView';
-import { LossReviewView } from './views/LossReviewView';
+import { KnownLossReportView } from './views/KnownLossReportView';
 
 /** Shows a generic message to users; details go to the console only. */
 class ErrorBoundary extends Component<{ children: ReactNode; resetKey: string }, { failed: boolean; key: string }> {
@@ -48,7 +49,7 @@ function Shell() {
       case 'itemcost':
         return <ItemCostView openDefinitions={openDefinitions} />;
       case 'loss':
-        return <LossReviewView openDefinitions={openDefinitions} />;
+        return <KnownLossReportView openDefinitions={openDefinitions} />;
       case 'cost':
         return <CostWatchView openDefinitions={openDefinitions} />;
       default:
@@ -82,7 +83,9 @@ export default function App() {
   return (
     <FilterProvider>
       <SimulatorProvider>
-        <Shell />
+        <ItReportProvider>
+          <Shell />
+        </ItReportProvider>
       </SimulatorProvider>
     </FilterProvider>
   );

@@ -2,11 +2,11 @@ import { useMemo, useState, type ReactNode } from 'react';
 import { CATS, DEPTS, ITEMS, SUBS } from '../data/products';
 import { Banner, BannerStack, KeyFigures, SectionHeading, type Tile } from '../components/Blocks';
 import { HierTable, type HierCol, type HierRow } from '../components/HierTable';
-import { CellBar, InfoTip, Segmented, StatusChip, Var } from '../components/ui';
+import { CellBar, FlagCell, InfoTip, Segmented, StatusChip, Var } from '../components/ui';
 import { C, ChartCard, ChartGrid, ItemMap, TrendLines, Waterfall, type ItemPoint } from '../components/Charts';
 import { describeProductScope, describeStoreScope } from '../lib/filters';
 import { actions } from '../lib/filterStore';
-import { count, DASH, money, moneyCompact, moneyUnit, pct, pctChange, volume, volumeCompact, weekTick } from '../lib/format';
+import { DASH, money, moneyCompact, moneyUnit, pct, pctChange, volume, volumeCompact, weekTick } from '../lib/format';
 import {
   COST_ELEMENTS,
   grossMargin,
@@ -20,6 +20,7 @@ import {
   marginAfterLoss,
   purchaseCostPerUnitPurchased,
   sellThrough,
+  type LossBasis,
   type MarginBase,
 } from '../lib/kpis';
 import { addAgg, emptyAgg, findFlags, isEntryError, itemAggregates, itemStores, trendWeeks, weeklyMargin, type Agg, type ItemAgg } from '../lib/selectors';
@@ -32,7 +33,7 @@ import { FlagRulesButton } from '../components/FlagRules';
 import { ExportButton } from '../components/ExportButton';
 import { LossBasisControl } from '../components/LossBasis';
 import { fiscalOfWeek } from '../data/calendar';
-import { extremeInScope, goToExtreme, goToShrimp, P8_FY2026, shrimpStory, useScope, ViewToggles, type ViewProps } from './common';
+import { extremeInScope, goToExtreme, goToShrimp, lossBasisWord, lossTitle, P8_FY2026, shrimpStory, useScope, ViewToggles, type ViewProps } from './common';
 
 const COST_LABEL: Record<CostElement, string> = {
   trade: 'Trade rates',
@@ -42,7 +43,7 @@ const COST_LABEL: Record<CostElement, string> = {
   freight: 'Freight billed separately',
 };
 
-function itemColumns(idStores: boolean): HierCol[] {
+function itemColumns(idStores: boolean, basis: LossBasis): HierCol[] {
   const yoy = idStores ? 'ID Stores YoY' : 'YoY';
   return [
     { key: 'gross', label: 'Total Gross Sales', title: 'Sales prior to discounts', group: 'Sales' },
@@ -57,9 +58,9 @@ function itemColumns(idStores: boolean): HierCol[] {
     { key: 'po', label: 'PO Cost / Unit', title: 'Purchase order cost per unit (landed), weighted by units sold', group: 'Cost' },
     { key: 'tnc', label: 'Total Net Cost', title: 'Cost of units sold under the selected cost basis', group: 'Cost' },
     { key: 'ncu', label: 'Net Cost / Unit', title: 'Total Net Cost ÷ Total Volume', group: 'Cost' },
-    { key: 'loss', label: 'Total Loss ($)', title: 'Known loss (KL1011)', group: 'Loss' },
+    { key: 'loss', label: `Total Loss ($) · ${lossBasisWord(basis)}`, title: lossTitle(basis), group: 'Loss' },
     { key: 'lossU', label: 'Total Loss (Units)', title: 'Known loss in units or lb', group: 'Loss' },
-    { key: 'flag', label: 'High Loss Flag', title: 'Likely entry errors and high loss to review', group: 'Loss' },
+    { key: 'flag', label: 'High Loss Flag', title: 'Item-store-weeks with known loss above $1,000 (workbook); reason labels are proposed', group: 'Loss' },
     { key: 'pcpuP', label: 'Purchase Cost per Unit Purchased', title: 'Proposed: Total Purchases ÷ units purchased', group: 'Cost', defaultHidden: true },
     { key: 'rel', label: 'Cost reliability', title: 'UPC: average cost is reliable. PLU and random weight: under review.', group: 'Cost', defaultHidden: true, left: true },
     { key: 'mal', label: 'Margin After Loss %', title: 'Proposed: Gross Margin Rate − loss rate (actual known loss or the expected rate)', group: 'Margin', defaultHidden: true },
@@ -263,15 +264,7 @@ export function CategoryItemView({ openDefinitions }: ViewProps) {
       bump(bySub, it.sub, a);
       if (it.composite && it.composite.ageMonths > 6) staleCount++;
     }
-    const flagsOf = (a: Agg) =>
-      a.highFlags ? (
-        <span className="flag-cell">
-          {a.errFlags > 0 && <span className="chip error">{count(a.errFlags)} {a.errFlags === 1 ? 'error' : 'errors'}</span>}
-          {a.highFlags - a.errFlags > 0 && <span className="chip amber">{count(a.highFlags - a.errFlags)} to review</span>}
-        </span>
-      ) : (
-        ''
-      );
+    const flagsOf = (a: Agg) => (a.highFlags ? <FlagCell flags={a.highFlags} errors={a.errFlags} /> : '');
     const itemRow = (a: ItemAgg): HierRow => {
       const it = ITEMS[a.item];
       const band = catBand(it.cat);
@@ -280,14 +273,16 @@ export function CategoryItemView({ openDefinitions }: ViewProps) {
       const c = aggCells(
         a,
         { ...cellOpts, expectedLoss: expFor(it.dept), reliability: it.costType === 'UPC' ? 'Reliable (average cost)' : 'Under review' },
-        reasons.length ? (
-          <span className="flag-cell">
-            {reasons.map((r) => (
-              <span key={r} className={`chip ${r.startsWith('Likely entry error') || r === 'Negative margin' ? 'error' : r === 'Below target' ? 'neutral' : 'amber'}`}>
+        reasons.length || a.highFlags ? (
+          <FlagCell
+            flags={a.highFlags}
+            errors={a.errFlags}
+            extra={reasons.map((r) => (
+              <span key={r} className={`chip ${r === 'Negative margin' ? 'error' : r === 'Below target' ? 'neutral' : 'amber'}`}>
                 {r}
               </span>
             ))}
-          </span>
+          />
         ) : (
           ''
         ),
@@ -361,7 +356,7 @@ export function CategoryItemView({ openDefinitions }: ViewProps) {
   const ly = range.lyAvailable;
   const idWord = state.idStores ? 'ID stores YoY' : 'YoY';
   const scopeLabel = `${describeProductScope(state)} · ${describeStoreScope(state)}`;
-  const lossWord = basis === 'cost' ? 'at cost' : 'at retail';
+  const lossWord = lossBasisWord(basis);
   const baseWord = mb === 'gross' ? 'Gross Sales' : 'Net Sales';
   const yoy = (ty: number, lyv: number) => {
     const g = yoyGrowth(ty, lyv);
@@ -403,7 +398,7 @@ export function CategoryItemView({ openDefinitions }: ViewProps) {
     },
     {
       label: 'Total Loss ($)',
-      info: 'Known loss (KL1011 Dept Known Loss by Item), at cost by default. Flagged entries are excluded by default.',
+      info: `${lossTitle(basis, 'Known loss (KL1011 Dept Known Loss by Item)')} Likely entry errors are excluded by default.`,
       value: moneyCompact(lossIncl),
       sub: (
         <>
@@ -474,7 +469,7 @@ export function CategoryItemView({ openDefinitions }: ViewProps) {
           <Banner
             lead={extreme.flagged && state.flagged === 'excl' ? 'Excluded from totals:' : 'Included in totals:'}
             kind={extreme.flagged && state.flagged === 'excl' ? 'alert' : 'danger'}
-            details={{ label: 'Review in Loss Review', onClick: () => goToExtreme(update) }}
+            details={{ label: 'Review in Known Loss Report', onClick: () => goToExtreme(update) }}
           >
             a {moneyCompact(extreme.cost)} known loss entry ({extreme.item}, store {extreme.store}, {extreme.week}) is flagged as an entry error
             {state.flagged === 'excl' ? ' and left out of loss totals pending review.' : '. Switch to Excl. flagged to remove it from totals.'}
@@ -492,7 +487,7 @@ export function CategoryItemView({ openDefinitions }: ViewProps) {
         )}
       </BannerStack>
 
-      <ViewToggles flagged margin>
+      <ViewToggles loss flagged margin>
         <span className="toggle-group">
           <span className="toggle-label">Cost source</span>
           <Segmented<'po' | 'hq'>
@@ -612,12 +607,12 @@ export function CategoryItemView({ openDefinitions }: ViewProps) {
         <HierTable
           key={scope.productKey}
           hierarchy="Department › Category › Subcategory › SKU Number"
-          columns={itemColumns(state.idStores)}
+          columns={itemColumns(state.idStores, state.lossBasis)}
           tableId="items"
           defaultSort={{ key: 'gross', dir: 'desc' }}
           defaultExpanded={state.dept >= 0 ? [`d${state.dept}`, ...(state.cat >= 0 ? [`c${state.cat}`] : []), ...(state.sub >= 0 ? [`s${state.sub}`] : [])] : []}
           exportTitle={`Category-Item Summary ${range.label}`}
-          total={{ id: 'total', label: 'Total', ...aggCells(total, { ...cellOpts, expectedLoss: totalExp }, total.highFlags ? <span className="chip error">{count(total.highFlags)}</span> : '') }}
+          total={{ id: 'total', label: 'Total', ...aggCells(total, { ...cellOpts, expectedLoss: totalExp }, total.highFlags ? <FlagCell flags={total.highFlags} errors={total.errFlags} /> : '') }}
           rows={rows}
         />
         {drillItem !== null && (
@@ -634,8 +629,8 @@ export function CategoryItemView({ openDefinitions }: ViewProps) {
                 getSheet={() => ({
                   title: `Stores · ${ITEMS[drillItem].name} (${ITEMS[drillItem].code})`,
                   subtitle: range.label,
-                  head: ['Store', 'District', 'Units sold', 'Units scanned out', 'Total Loss ($)', 'Likely entry errors', 'High loss to review'],
-                  rows: drillRows.map((r) => [STORES[r.store].code, STORES[r.store].district, Math.round(r.unitsSold), Math.round(r.unitsScannedOut), Math.round(r.loss * 100) / 100, r.errFlags, r.reviewFlags]),
+                  head: ['Store', 'District', 'Units sold', 'Units scanned out', 'Total Loss ($)', 'High Loss Flag', 'Likely entry errors (proposed label)'],
+                  rows: drillRows.map((r) => [STORES[r.store].code, STORES[r.store].district, Math.round(r.unitsSold), Math.round(r.unitsScannedOut), Math.round(r.loss * 100) / 100, r.errFlags + r.reviewFlags, r.errFlags]),
                 })}
               />
             </div>
@@ -660,10 +655,7 @@ export function CategoryItemView({ openDefinitions }: ViewProps) {
                       <td>{volume(r.unitsScannedOut, ITEMS[drillItem].uom)}</td>
                       <td>{money(r.loss)}</td>
                       <td>
-                        <span className="flag-cell">
-                          {r.errFlags > 0 && <span className="chip error">Likely entry error</span>}
-                          {r.reviewFlags > 0 && <span className="chip amber">High loss to review</span>}
-                        </span>
+                        <FlagCell flags={r.errFlags + r.reviewFlags} errors={r.errFlags} />
                       </td>
                     </tr>
                   ))}

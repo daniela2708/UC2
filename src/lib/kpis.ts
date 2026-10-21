@@ -254,11 +254,13 @@ export function lossPctOfSales(loss: Num, grossSales: Num): number | null {
 export interface LossRule {
   /** Weekly loss must be above this many dollars (at cost). */
   dollars: number;
-  /** …and more than this fraction above the item-store 26-week average (1 = 100 %). */
+  /** Proposed refinement: when on, loss must also be more than this fraction above the item-store 26-week average (1 = 100 %). */
   pct: number;
+  avg: boolean;
 }
 
-export const DEFAULT_LOSS_RULE: LossRule = { dollars: 1000, pct: 1 };
+/** Workbook: High Loss Flag = loss higher than $1,000 in a given week. The 26-week rule is a proposed refinement, off by default. */
+export const DEFAULT_LOSS_RULE: LossRule = { dollars: 1000, pct: 1, avg: false };
 export const LOSS_RULE_LIMITS = { dollars: { min: 250, max: 100_000 }, pct: { min: 0, max: 10 } } as const;
 
 export function clamp(n: number, min: number, max: number): number {
@@ -267,22 +269,25 @@ export function clamp(n: number, min: number, max: number): number {
 }
 
 /** Clamps user-entered thresholds to their allowed ranges. Non-numbers fall back to the default. */
-export function clampLossRule(rule: { dollars: unknown; pct: unknown }): LossRule {
+export function clampLossRule(rule: { dollars: unknown; pct: unknown; avg?: unknown }): LossRule {
   const d = typeof rule.dollars === 'number' && Number.isFinite(rule.dollars) ? rule.dollars : DEFAULT_LOSS_RULE.dollars;
   const p = typeof rule.pct === 'number' && Number.isFinite(rule.pct) ? rule.pct : DEFAULT_LOSS_RULE.pct;
   return {
     dollars: Math.round(clamp(d, LOSS_RULE_LIMITS.dollars.min, LOSS_RULE_LIMITS.dollars.max)),
     pct: clamp(p, LOSS_RULE_LIMITS.pct.min, LOSS_RULE_LIMITS.pct.max),
+    avg: rule.avg === true,
   };
 }
 
 /**
- * High Loss Flag: weekly loss > threshold $ AND > (1 + threshold %) × the item-store 26-week average.
- * Without a 26-week history the flag cannot fire.
+ * High Loss Flag (workbook): weekly loss strictly above the $ threshold ($1,000).
+ * With the proposed 26-week rule on, loss must also be above (1 + threshold %) × the item-store 26-week average,
+ * and without that history the flag cannot fire.
  */
 export function highLossFlag(weeklyLoss: Num, avg26: Num, rule: LossRule): boolean {
-  if (!ok(weeklyLoss) || !ok(avg26)) return false;
-  return weeklyLoss > rule.dollars && weeklyLoss > (1 + rule.pct) * avg26;
+  if (!ok(weeklyLoss) || weeklyLoss <= rule.dollars) return false;
+  if (!rule.avg) return true;
+  return ok(avg26) && weeklyLoss > (1 + rule.pct) * avg26;
 }
 
 /** Likely entry error: loss units above 20× the item-store's typical weekly loss units. */
@@ -384,19 +389,6 @@ export function simulateCostChange(x: SimInputs): SimResult {
   };
 }
 
-// ---------------------------------------------------------------- New items watch
-
-export const NEW_ITEM_WEEKS = 12;
-
-/** Weeks on sale through `endWeek`, counting the first week of sales as week 1 (0 before launch). */
-export function weeksOnSale(firstWeek: number, endWeek: number): number {
-  return endWeek < firstWeek ? 0 : endWeek - firstWeek + 1;
-}
-
-/** An item is "new" during its first 12 weeks since first sale: week 12 is included, week 13 is not. */
-export function inNewItemWindow(weeks: number): boolean {
-  return Number.isInteger(weeks) && weeks >= 1 && weeks <= NEW_ITEM_WEEKS;
-}
 
 // ---------------------------------------------------------------- Margin after loss (Proposed)
 
@@ -423,4 +415,18 @@ export function marginAfterLoss(gmRate: Num, lossRate: Num): number | null {
 export function sellThrough(unitsSold: Num, unitsShipped: Num): number | null {
   if (typeof unitsShipped === 'number' && unitsShipped < 0) return null;
   return safeDiv(unitsSold, unitsShipped);
+}
+
+// ---------------------------------------------------------------- New items watch
+
+export const NEW_ITEM_WEEKS = 12;
+
+/** Weeks on sale through `endWeek`, counting the first week of sales as week 1 (0 before launch). */
+export function weeksOnSale(firstWeek: number, endWeek: number): number {
+  return endWeek < firstWeek ? 0 : endWeek - firstWeek + 1;
+}
+
+/** An item is "new" during its first 12 weeks since first sale: week 12 is included, week 13 is not. */
+export function inNewItemWindow(weeks: number): boolean {
+  return Number.isInteger(weeks) && weeks >= 1 && weeks <= NEW_ITEM_WEEKS;
 }

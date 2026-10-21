@@ -27,7 +27,6 @@ import {
 } from '../data/generate';
 import { CATS, DEPTS, estimatedCompositeCost, ITEMS } from '../data/products';
 import { STORES } from '../data/stores';
-import { PLANTED } from '../data/planted';
 import {
   freshGpPct,
   highLossFlag,
@@ -101,17 +100,17 @@ export function buildScope(
 
 interface ShareSet {
   /** cat × week share of chain sales held by the store set. */
-  sales: Float32Array;
+  sales: Float64Array;
   /** cat × week share of chain known loss held by the store set (0 where a store has not posted). */
-  loss: Float32Array;
+  loss: Float64Array;
 }
 const shareCache = new Map<string, ShareSet>();
 
 function shareSet(scope: Scope): ShareSet {
   return memo(shareCache, scope.storeKey, () => {
     const m = getModel();
-    const sales = new Float32Array(NC * NW);
-    const loss = new Float32Array(NC * NW);
+    const sales = new Float64Array(NC * NW);
+    const loss = new Float64Array(NC * NW);
     for (let c = 0; c < NC; c++) {
       const dept = CATS[c].dept;
       for (const s of scope.stores) {
@@ -143,6 +142,44 @@ function storeShare(m: Model, c: number, s: number, w: number): [number, number]
   const lt = m.lossTot[c * NW + w];
   const lf = STORES[s].lossFactor * m.storeDeptLoss[s * NDP + CATS[c].dept];
   return [t > 0 ? v / t : 0, lt > 0 && m.lossPosted[s * NW + w] ? (v * lf) / lt : 0];
+}
+
+/**
+ * Known loss of one item-store-week as the store split gives it (item loss × the store's loss share). Loss events
+ * replace this value, so a store's loss with an event is exactly the event, and an excluded entry leaves 0.
+ */
+function shareCellLoss(m: Model, i: number, s: number, w: number): number {
+  return m.lossCost[i * NW + w] * storeShare(m, ITEMS[i].cat, s, w)[1];
+}
+
+/** Planted item-store-week sales corrections summed over the store set: units and gross sales. */
+function scopeSalesAdj(m: Model, stores: number[], i: number, w: number): { u: number; g: number } {
+  const a = m.salesAdjIndex.get(i * NW + w);
+  if (!a) return { u: 0, g: 0 };
+  let u = 0;
+  for (const s of stores) u += a.units[s];
+  return { u, g: u * a.price };
+}
+
+/** Sales corrections for one store-week across a department's items (all items, or those in the mask). */
+function deptSalesAdj(m: Model, d: number, s: number, w: number, mask: Uint8Array | null) {
+  const out = { g: 0, net: 0, ea: 0, lb: 0, gEa: 0, gLb: 0, cogs: 0 };
+  for (const a of m.salesAdj) {
+    if (a.week !== w || ITEMS[a.item].dept !== d || (mask && !mask[a.item])) continue;
+    const u = a.units[s];
+    const g = u * a.price;
+    out.g += g;
+    out.net += g * (1 - m.disc[d * NW + w]);
+    out.cogs += u * poUnitCostWeek(a.item, w);
+    if (ITEMS[a.item].uom === 'ea') {
+      out.ea += u;
+      out.gEa += g;
+    } else {
+      out.lb += u;
+      out.gLb += g;
+    }
+  }
+  return out;
 }
 
 // ---------------------------------------------------------------- Loss flags
@@ -184,7 +221,7 @@ export function isEntryError(f: FlagHit): boolean {
 }
 
 export function findFlags(scope: Scope, w0 = scope.range.startWeek, w1 = scope.range.endWeek): FlagHit[] {
-  const key = `${scope.productKey}#${scope.storeKey}#${w0}-${w1}#${scope.rule.dollars}-${scope.rule.pct}`;
+  const key = `${scope.productKey}#${scope.storeKey}#${w0}-${w1}#${scope.rule.dollars}-${scope.rule.pct}-${scope.rule.avg}`;
   return memo(flagCache, key, () => {
     const m = getModel();
     const hits: FlagHit[] = [];
@@ -192,7 +229,7 @@ export function findFlags(scope: Scope, w0 = scope.range.startWeek, w1 = scope.r
       const c = cellLoss(m, i, s, w);
       if (c.cost <= scope.rule.dollars) return;
       const h = history26(m, i, s, w);
-      if (h.n < 4) return;
+      if (scope.rule.avg && h.n < 4) return;
       if (!highLossFlag(c.cost, h.cost, scope.rule)) return;
       hits.push({
         item: i,
@@ -240,7 +277,7 @@ function lossAdjustments(scope: Scope, w0: number, w1: number): Map<number, numb
     const k = i * NW + w;
     adj.set(k, (adj.get(k) ?? 0) + v);
   };
-  for (const e of eventsInScope(scope, w0, w1)) add(e.item, e.week, e.lossCost - cellBaseLoss(m, e.item, e.store, e.week));
+  for (const e of eventsInScope(scope, w0, w1)) add(e.item, e.week, e.lossCost - shareCellLoss(m, e.item, e.store, e.week));
   // Excluding means leaving out likely entry errors; high loss to review is real loss and stays in.
   if (scope.flagged === 'excl') for (const f of findFlags(scope, w0, w1)) if (isEntryError(f)) add(f.item, f.week, -f.cost);
   return adj;
@@ -381,7 +418,7 @@ const itemCache = new Map<string, ItemAgg[]>();
 
 export function itemAggregates(scope: Scope, costBasis: readonly CostElement[], source: CostSource = 'po'): ItemAgg[] {
   const r = scope.range;
-  const key = `${scope.productKey}#${scope.storeKey}#${r.start}-${r.end}#${costBasis.join('.')}#${source}#${scope.flagged}#${scope.rule.dollars}-${scope.rule.pct}`;
+  const key = `${scope.productKey}#${scope.storeKey}#${r.start}-${r.end}#${costBasis.join('.')}#${source}#${scope.flagged}#${scope.rule.dollars}-${scope.rule.pct}-${scope.rule.avg}`;
   return memo(itemCache, key, () => {
     const m = getModel();
     const sh = shareSet(scope);
@@ -427,8 +464,10 @@ export function itemAggregates(scope: Scope, costBasis: readonly CostElement[], 
             }
           }
           const f = sh.sales[c * NW + wk];
-          const gross = s * f;
-          const units = u * f;
+          const sAdj = scopeSalesAdj(m, scope.stores, i, wk);
+          const wf = (db - da + 1) / 7;
+          const gross = s * f + sAdj.g * wf;
+          const units = u * f + sAdj.u * wf;
           const net = gross * (1 - m.disc[d * NW + wk]);
           const unitCost = netCostPerUnit(costParts(m, i, wk, source), costBasis);
           const altCost = netCostPerUnit(costParts(m, i, wk, source === 'po' ? 'hq' : 'po'), costBasis);
@@ -491,11 +530,9 @@ export function itemAggregates(scope: Scope, costBasis: readonly CostElement[], 
       const ne = errCount.get(i) ?? 0;
       a.highFlags = nf + ne;
       a.errFlags = ne;
-      if (ne > 0) a.flagReasons.push(`Likely entry error ×${ne}`);
-      if (nf > 0) a.flagReasons.push(`High loss to review ×${nf}`);
       if (it.composite && it.composite.ageMonths > 6) a.flagReasons.push('Stale cost');
       if (a.net > 0 && a.net - a.cost < 0) a.flagReasons.push('Negative margin');
-      a.flags = a.flagReasons.length > 0 ? 1 : 0;
+      a.flags = a.flagReasons.length > 0 || a.highFlags > 0 ? 1 : 0;
       out.push(a);
     }
     return out;
@@ -616,6 +653,8 @@ function deptStoreWeek(m: Model, cs: Float64Array, d: number, s: number, w: numb
     ds += cs[c * NW + w] * storeShare(m, c, s, w)[0];
     next += cs[c * NW + wn] * storeShare(m, c, s, wn)[0];
   }
+  ds += deptSalesAdj(m, d, s, w, null).g;
+  next += deptSalesAdj(m, d, s, wn, null).g;
   if (ds <= 0) {
     for (const ch of PURCHASE_CHANNELS) out[ch] = 0;
     return 0;
@@ -688,6 +727,14 @@ export function freshStoreWeeks(scope: Scope, depts: number[], weeks: number[]):
               cell.gLb += gLbSel[c * NW + w] * sh;
               cell.cogs += cogsSel[c * NW + w] * sh;
             }
+            const adj = deptSalesAdj(m, d, s, w, scope.itemMask);
+            selSales += adj.g;
+            cell.net += adj.net;
+            cell.ea += adj.ea;
+            cell.lb += adj.lb;
+            cell.gEa += adj.gEa;
+            cell.gLb += adj.gLb;
+            cell.cogs += adj.cogs;
             if (selSales <= 0) continue;
             const ds = deptStoreWeek(m, csAll, d, s, w, fr, dp);
             if (ds <= 0) continue;
@@ -784,6 +831,24 @@ export function freshStoreDays(scope: Scope, depts: number[], days: number[]): M
               selCost += ccSel[c * NW + w] * sh;
               allCost += ccAll[c * NW + w] * sh;
             }
+          }
+          // Planted sales corrections ring on the days the item sells.
+          for (const a of m.salesAdj) {
+            if (a.week !== w || ITEMS[a.item].dept !== d || !scope.itemMask[a.item]) continue;
+            const wk = m.sales[a.item * NW + w];
+            const part = wk > 0 ? m.dSales[a.item * ND + day] / wk : 0;
+            const u = a.units[s] * part;
+            const g = u * a.price;
+            daySales += g;
+            cell.net += g * (1 - m.disc[d * NW + w]);
+            if (ITEMS[a.item].uom === 'ea') {
+              cell.ea += u;
+              cell.gEa += g;
+            } else {
+              cell.lb += u;
+              cell.gLb += g;
+            }
+            if (w <= LAST_COMPLETE_WEEK) weekSales += a.units[s] * a.price;
           }
           cell.sales += daySales;
           if (w > LAST_COMPLETE_WEEK || weekSales <= 0) continue;
@@ -894,7 +959,7 @@ const storeLossCache = new Map<string, Map<number, StoreCatLoss[]>>();
 /** Known loss by store (index) and category (index into CATS) over the scope's complete weeks. */
 export function storeCatLoss(scope: Scope): Map<number, StoreCatLoss[]> {
   const r = scope.range;
-  const key = `${scope.productKey}#${scope.storeKey}#${r.startWeek}-${r.endWeek}#${scope.flagged}#${scope.rule.dollars}-${scope.rule.pct}`;
+  const key = `${scope.productKey}#${scope.storeKey}#${r.startWeek}-${r.endWeek}#${scope.flagged}#${scope.rule.dollars}-${scope.rule.pct}-${scope.rule.avg}`;
   return memo(storeLossCache, key, () => {
     const m = getModel();
     const cs = catWeekSales(scope);
@@ -927,7 +992,7 @@ export function storeCatLoss(scope: Scope): Map<number, StoreCatLoss[]> {
         const row = out.get(e.store);
         if (!row) continue;
         const c = ITEMS[e.item].cat;
-        const delta = e.lossCost - cellBaseLoss(m, e.item, e.store, e.week);
+        const delta = e.lossCost - shareCellLoss(m, e.item, e.store, e.week);
         const rf = RETAIL_LOSS_FACTOR[CATS[c].dept];
         if (ly) {
           row[c].lyLoss += delta;
@@ -1025,7 +1090,7 @@ export const SPARK_WEEKS = 26;
 
 export function shrinkAggregates(scope: Scope): ShrinkAgg[] {
   const r = scope.range;
-  const key = `${scope.productKey}#${scope.storeKey}#${r.startWeek}-${r.endWeek}#${scope.flagged}#${scope.rule.dollars}-${scope.rule.pct}`;
+  const key = `${scope.productKey}#${scope.storeKey}#${r.startWeek}-${r.endWeek}#${scope.flagged}#${scope.rule.dollars}-${scope.rule.pct}-${scope.rule.avg}`;
   return memo(shrinkCache, key, () => {
     const m = getModel();
     const sh = shareSet(scope);
@@ -1062,8 +1127,9 @@ export function shrinkAggregates(scope: Scope): ShrinkAgg[] {
       for (let w = r.startWeek; w <= r.endWeek; w++) {
         const k = i * NW + w;
         const f = sh.sales[c * NW + w];
-        const units = m.units[k] * f;
-        a.sales += m.sales[k] * f;
+        const sAdj = scopeSalesAdj(m, scope.stores, i, w);
+        const units = m.units[k] * f + sAdj.u;
+        a.sales += m.sales[k] * f + sAdj.g;
         const l = weekLoss(w);
         a.loss += l;
         const lu = m.poCost[k] > 0 ? l / m.poCost[k] : 0;
@@ -1116,8 +1182,9 @@ export function pluRows(scope: Scope): PluRow[] {
     let net = 0;
     for (let w = fy0; w < NW; w++) {
       const f = sh.sales[it.cat * NW + w];
-      units += m.units[i * NW + w] * f;
-      net += m.sales[i * NW + w] * f * (1 - m.disc[it.dept * NW + w]);
+      const adj = scopeSalesAdj(m, scope.stores, i, w);
+      units += m.units[i * NW + w] * f + adj.u;
+      net += (m.sales[i * NW + w] * f + adj.g) * (1 - m.disc[it.dept * NW + w]);
     }
     const est = estimatedCompositeCost(comp);
     const netPrice = units > 0 ? net / units : 0;
@@ -1176,7 +1243,7 @@ const marginCache = new Map<string, MarginPoint[]>();
 
 /** Chain-or-store-set weekly net sales, cost at the selected basis and known loss, with last year. */
 export function weeklyMargin(scope: Scope, costBasis: readonly CostElement[], weeks: number[], source: CostSource = 'po'): MarginPoint[] {
-  const key = `${scope.productKey}#${scope.storeKey}#${weeks[0]}-${weeks[weeks.length - 1]}#${costBasis.join('.')}#${source}#${scope.flagged}#${scope.rule.dollars}-${scope.rule.pct}`;
+  const key = `${scope.productKey}#${scope.storeKey}#${weeks[0]}-${weeks[weeks.length - 1]}#${costBasis.join('.')}#${source}#${scope.flagged}#${scope.rule.dollars}-${scope.rule.pct}-${scope.rule.avg}`;
   return memo(marginCache, key, () => {
     const m = getModel();
     const sh = shareSet(scope);
@@ -1188,17 +1255,19 @@ export function weeklyMargin(scope: Scope, costBasis: readonly CostElement[], we
         const c = it.cat;
         const k = i * NW + w;
         const f = sh.sales[c * NW + w];
-        const g = m.sales[k] * f;
+        const sAdj = scopeSalesAdj(m, scope.stores, i, w);
+        const g = m.sales[k] * f + sAdj.g;
         p.gross += g;
         p.net += g * (1 - m.disc[it.dept * NW + w]);
-        p.cost += m.units[k] * f * netCostPerUnit(costParts(m, i, w, source), costBasis);
+        p.cost += (m.units[k] * f + sAdj.u) * netCostPerUnit(costParts(m, i, w, source), costBasis);
         p.loss += Math.max(0, m.lossCost[k] * sh.loss[c * NW + w] + (adj.get(k) ?? 0));
         if (w >= 52) {
           const kl = k - 52;
           const fl = sh.sales[c * NW + w - 52];
-          p.lyGross! += m.sales[kl] * fl;
-          p.lyNet! += m.sales[kl] * fl * (1 - m.disc[it.dept * NW + w - 52]);
-          p.lyCost! += m.units[kl] * fl * netCostPerUnit(costParts(m, i, w - 52, source), costBasis);
+          const la = scopeSalesAdj(m, scope.stores, i, w - 52);
+          p.lyGross! += m.sales[kl] * fl + la.g;
+          p.lyNet! += (m.sales[kl] * fl + la.g) * (1 - m.disc[it.dept * NW + w - 52]);
+          p.lyCost! += (m.units[kl] * fl + la.u) * netCostPerUnit(costParts(m, i, w - 52, source), costBasis);
         }
       }
       return p;
@@ -1206,27 +1275,6 @@ export function weeklyMargin(scope: Scope, costBasis: readonly CostElement[], we
   });
 }
 
-/** Weekly known loss at cost for the scope, last year's same weeks alongside (both after flag handling). */
-export function weeklyLoss(scope: Scope, weeks: number[]): { week: number; loss: number; ly: number | null; flags: number }[] {
-  const m = getModel();
-  const sh = shareSet(scope);
-  const w0 = weeks[0];
-  const w1 = weeks[weeks.length - 1];
-  const adj = lossAdjustments(scope, w0, w1);
-  const lyAdj = w0 - 52 >= 0 ? lossAdjustments(scope, w0 - 52, w1 - 52) : new Map<number, number>();
-  const flagsByWeek = new Map<number, number>();
-  for (const f of findFlags(scope, w0, w1)) flagsByWeek.set(f.week, (flagsByWeek.get(f.week) ?? 0) + 1);
-  return weeks.map((w) => {
-    let loss = 0;
-    let ly = 0;
-    for (const i of scope.items) {
-      const c = ITEMS[i].cat;
-      loss += Math.max(0, m.lossCost[i * NW + w] * sh.loss[c * NW + w] + (adj.get(i * NW + w) ?? 0));
-      if (w >= 52) ly += Math.max(0, m.lossCost[i * NW + w - 52] * sh.loss[c * NW + w - 52] + (lyAdj.get(i * NW + w - 52) ?? 0));
-    }
-    return { week: w, loss, ly: w >= 52 ? ly : null, flags: flagsByWeek.get(w) ?? 0 };
-  });
-}
 
 // ---------------------------------------------------------------- Item store drill-down
 
@@ -1245,17 +1293,12 @@ export function itemStores(scope: Scope, item: number): ItemStoreRow[] {
   const r = scope.range;
   const c = ITEMS[item].cat;
   const flags = findFlags(scope).filter((f) => f.item === item);
-  const soup = PLANTED.soup;
-  const soupItem = ITEMS[item].name === soup.item;
   const out: ItemStoreRow[] = [];
   for (const s of scope.stores) {
     const row: ItemStoreRow = { store: s, unitsSold: 0, unitsScannedOut: 0, loss: 0, errFlags: 0, reviewFlags: 0 };
     for (let w = r.startWeek; w <= r.endWeek; w++) {
       const [f] = storeShare(m, c, s, w);
-      let sold = m.units[item * NW + w] * f;
-      // Planted Deli soup case: the store sold a single unit that week.
-      if (soupItem && STORES[s].id === soup.store && w === soup.week) sold = soup.unitsSold;
-      row.unitsSold += sold;
+      row.unitsSold += m.units[item * NW + w] * f + (m.salesAdjIndex.get(item * NW + w)?.units[s] ?? 0);
       const cl = cellLoss(m, item, s, w);
       row.unitsScannedOut += cl.units;
       row.loss += cl.cost;
@@ -1268,6 +1311,131 @@ export function itemStores(scope: Scope, item: number): ItemStoreRow[] {
     if (row.unitsSold > 0 || row.unitsScannedOut > 0) out.push(row);
   }
   return out.sort((a, b) => b.loss - a.loss);
+}
+
+// ---------------------------------------------------------------- Known Loss Report: stores
+
+export interface StoreKnownLoss {
+  store: number;
+  gross: number;
+  ea: number;
+  lb: number;
+  loss: number;
+  lossUnitsEa: number;
+  lossUnitsLb: number;
+  /** High Loss Flags (item-store-weeks above $1,000) and how many carry the "Likely entry error" label. */
+  flags: number;
+  errFlags: number;
+}
+
+const klCache = new Map<string, StoreKnownLoss[]>();
+
+/**
+ * Known Loss Report store table (KL1011 by store) for the items in scope, or for one SKU. Built on the same
+ * store shares and loss adjustments as itemAggregates, so the store rows add up to the item table.
+ */
+export function storeKnownLoss(scope: Scope, item = -1): StoreKnownLoss[] {
+  const r = scope.range;
+  const key = `${scope.productKey}#${scope.storeKey}#${r.start}-${r.end}#${item}#${scope.flagged}#${scope.rule.dollars}-${scope.rule.pct}-${scope.rule.avg}`;
+  return memo(klCache, key, () => {
+    const m = getModel();
+    const items = item >= 0 ? [item] : scope.items;
+    const w0 = weekOfDay(r.start);
+    const w1 = weekOfDay(r.end);
+    const lw0 = Math.min(w0, LAST_COMPLETE_WEEK);
+    const lw1 = Math.min(w1, LAST_COMPLETE_WEEK);
+    const frac = (w: number) => {
+      const [da, db] = overlap(r.start, r.end, w);
+      return (db - da + 1) / 7;
+    };
+    // Chain sums by cat × week over the range: sales, units ea, units lb, loss $, loss units ea, loss units lb.
+    const K = 6;
+    const cw = new Float64Array(NC * NW * K);
+    const cats = new Set<number>();
+    for (const i of items) {
+      const it = ITEMS[i];
+      const c = it.cat;
+      const ea = it.uom === 'ea';
+      cats.add(c);
+      for (let w = w0; w <= w1; w++) {
+        const [da, db] = overlap(r.start, r.end, w);
+        let sv = 0;
+        let u = 0;
+        if (db - da === 6) {
+          sv = m.sales[i * NW + w];
+          u = m.units[i * NW + w];
+        } else
+          for (let day = da; day <= db; day++) {
+            sv += m.dSales[i * ND + day];
+            u += m.dUnits[i * ND + day];
+          }
+        const lc = m.lossCost[i * NW + w] * ((db - da + 1) / 7);
+        const pc = m.poCost[i * NW + w];
+        const o = (c * NW + w) * K;
+        cw[o] += sv;
+        cw[o + (ea ? 1 : 2)] += u;
+        cw[o + 3] += lc;
+        if (pc > 0) cw[o + (ea ? 4 : 5)] += lc / pc;
+      }
+    }
+    const rows = new Map<number, StoreKnownLoss>();
+    for (const s of scope.stores) {
+      const row: StoreKnownLoss = { store: s, gross: 0, ea: 0, lb: 0, loss: 0, lossUnitsEa: 0, lossUnitsLb: 0, flags: 0, errFlags: 0 };
+      for (const c of cats)
+        for (let w = w0; w <= w1; w++) {
+          const o = (c * NW + w) * K;
+          if (cw[o] === 0 && cw[o + 3] === 0) continue;
+          const [f, lf] = storeShare(m, c, s, w);
+          row.gross += cw[o] * f;
+          row.ea += cw[o + 1] * f;
+          row.lb += cw[o + 2] * f;
+          row.loss += cw[o + 3] * lf;
+          row.lossUnitsEa += cw[o + 4] * lf;
+          row.lossUnitsLb += cw[o + 5] * lf;
+        }
+      rows.set(s, row);
+    }
+    const addLoss = (i: number, s: number, w: number, cost: number) => {
+      const row = rows.get(s);
+      if (!row) return;
+      const v = cost * frac(w);
+      const pc = m.poCost[i * NW + w];
+      row.loss += v;
+      if (pc > 0) {
+        if (ITEMS[i].uom === 'ea') row.lossUnitsEa += v / pc;
+        else row.lossUnitsLb += v / pc;
+      }
+    };
+    for (const e of eventsInScope(scope, lw0, lw1)) if (item < 0 || e.item === item) addLoss(e.item, e.store, e.week, e.lossCost - shareCellLoss(m, e.item, e.store, e.week));
+    for (const f of findFlags(scope, lw0, lw1)) {
+      if (item >= 0 && f.item !== item) continue;
+      const row = rows.get(f.store);
+      if (!row) continue;
+      row.flags++;
+      if (!isEntryError(f)) continue;
+      row.errFlags++;
+      if (scope.flagged === 'excl') addLoss(f.item, f.store, f.week, -f.cost);
+    }
+    for (const a of m.salesAdj) {
+      if (a.week < w0 || a.week > w1 || (item >= 0 ? a.item !== item : !scope.itemMask[a.item])) continue;
+      const wf = frac(a.week);
+      const ea = ITEMS[a.item].uom === 'ea';
+      for (const row of rows.values()) {
+        const u = a.units[row.store] * wf;
+        row.gross += u * a.price;
+        if (ea) row.ea += u;
+        else row.lb += u;
+      }
+    }
+    const out: StoreKnownLoss[] = [];
+    for (const row of rows.values()) {
+      row.loss = Math.max(0, row.loss);
+      row.lossUnitsEa = Math.max(0, row.lossUnitsEa);
+      row.lossUnitsLb = Math.max(0, row.lossUnitsLb);
+      if (row.gross > 0 || row.loss > 0) out.push(row);
+    }
+    return out.sort((a, b) => b.loss - a.loss);
+  });
 }
 
 // ---------------------------------------------------------------- Cost Watch: PO vs HQ cost
@@ -1337,22 +1505,36 @@ function monthIndex(day: number): number {
 }
 const AS_OF_MONTH_INDEX = 2026 * 12 + 10;
 
-// ---------------------------------------------------------------- New items watch
+// ---------------------------------------------------------------- Known Loss Report: new items watch
+
+export interface NewItemWeek {
+  week: number;
+  /** Volume sold in the item's unit of measure. */
+  volume: number;
+  sales: number;
+  lossUnits: number;
+  loss: number;
+}
 
 export interface NewItemRow {
   item: number;
   launchWeek: number;
   weeks: number;
-  weekly: { week: number; sales: number; loss: number }[];
+  weekly: NewItemWeek[];
+  volume: number;
   sales: number;
+  lossUnits: number;
   loss: number;
 }
 
-/** Items in their first 12 weeks since first sale (as of the scope's last complete week), with weekly sales and loss. */
+/**
+ * Items in their first 12 weeks since first sale (as of the scope's last complete week), with weekly volume sold,
+ * sales, known loss units and $ for the store set. Mirrors the weekly KL1011 review the Deli team runs.
+ */
 export function newItemsWatch(scope: Scope): NewItemRow[] {
   const m = getModel();
   const sh = shareSet(scope);
-  const end = scope.range.endWeek;
+  const end = Math.min(scope.range.endWeek, LAST_COMPLETE_WEEK);
   const adj = lossAdjustments(scope, Math.max(0, end - 12), end);
   const out: NewItemRow[] = [];
   for (const i of scope.items) {
@@ -1361,17 +1543,21 @@ export function newItemsWatch(scope: Scope): NewItemRow[] {
     const weeks = weeksOnSale(it.launchWeek, end);
     if (!inNewItemWindow(weeks)) continue;
     const c = it.cat;
-    const weekly: NewItemRow['weekly'] = [];
-    let sales = 0;
-    let loss = 0;
+    const row: NewItemRow = { item: i, launchWeek: it.launchWeek, weeks, weekly: [], volume: 0, sales: 0, lossUnits: 0, loss: 0 };
     for (let w = it.launchWeek; w <= end; w++) {
-      const s = m.sales[i * NW + w] * sh.sales[c * NW + w];
-      const l = Math.max(0, m.lossCost[i * NW + w] * sh.loss[c * NW + w] + (adj.get(i * NW + w) ?? 0));
-      weekly.push({ week: w, sales: s, loss: l });
-      sales += s;
-      loss += l;
+      const k = i * NW + w;
+      const sAdj = scopeSalesAdj(m, scope.stores, i, w);
+      const f = sh.sales[c * NW + w];
+      const loss = Math.max(0, m.lossCost[k] * sh.loss[c * NW + w] + (adj.get(k) ?? 0));
+      const pc = m.poCost[k];
+      const wk: NewItemWeek = { week: w, volume: m.units[k] * f + sAdj.u, sales: m.sales[k] * f + sAdj.g, lossUnits: pc > 0 ? loss / pc : 0, loss };
+      row.weekly.push(wk);
+      row.volume += wk.volume;
+      row.sales += wk.sales;
+      row.lossUnits += wk.lossUnits;
+      row.loss += wk.loss;
     }
-    out.push({ item: i, launchWeek: it.launchWeek, weeks, weekly, sales, loss });
+    out.push(row);
   }
   return out.sort((a, b) => a.launchWeek - b.launchWeek);
 }

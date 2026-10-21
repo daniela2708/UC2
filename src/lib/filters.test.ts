@@ -47,7 +47,7 @@ describe('URL state', () => {
       stores: [152],
       idStores: true,
       lossBasis: 'retail' as const,
-      rule: { dollars: 2500, pct: 1.5 },
+      rule: { dollars: 2500, pct: 1.5, avg: true },
     };
     expect(fromQuery(toQuery(s))).toEqual(s);
   });

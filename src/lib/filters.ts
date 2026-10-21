@@ -45,12 +45,12 @@ import {
 // ---------------------------------------------------------------- Types
 
 export type TabId = 'items' | 'itemcost' | 'fresh' | 'loss' | 'cost';
-/** The three workbook views come first; the rest are proposed additional views. */
+/** The workbook's required views come first; the rest are proposed additional views. */
 export const TABS: { id: TabId; label: string; required: boolean }[] = [
   { id: 'items', label: 'Category-Item Summary', required: true },
   { id: 'itemcost', label: 'Item Cost Over Time', required: true },
   { id: 'fresh', label: 'Fresh Report', required: true },
-  { id: 'loss', label: 'Loss Review', required: false },
+  { id: 'loss', label: 'Known Loss Report', required: true },
   { id: 'cost', label: 'Cost Watch', required: false },
 ];
 /** Tab ids from earlier builds, so shared links keep working. */
@@ -506,6 +506,7 @@ export function toQuery(s: FilterState): string {
   if (cb !== [...DEFAULT_COST_BASIS].sort().join(',')) p.set('cb', cb || 'none');
   if (s.rule.dollars !== DEFAULT_LOSS_RULE.dollars) p.set('rd', String(s.rule.dollars));
   if (s.rule.pct !== DEFAULT_LOSS_RULE.pct) p.set('rp', String(Math.round(s.rule.pct * 100)));
+  if (s.rule.avg) p.set('ra', '1');
   if (s.marginBase !== DEFAULT_MARGIN_BASE) p.set('mb', s.marginBase);
   if (s.costType !== 'all') p.set('ct', s.costType);
   if (s.costSource !== 'po') p.set('cs', s.costSource);
@@ -609,6 +610,7 @@ export function fromQuery(query: string): FilterState {
   s.rule = clampLossRule({
     dollars: rd !== null && /^\d{1,7}$/.test(rd) ? Number(rd) : DEFAULT_LOSS_RULE.dollars,
     pct: rp !== null && /^\d{1,5}$/.test(rp) ? Number(rp) / 100 : DEFAULT_LOSS_RULE.pct,
+    avg: p.get('ra') === '1',
   });
   return s;
 }

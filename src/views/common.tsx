@@ -8,6 +8,7 @@ import { STORE_BY_ID } from '../data/stores';
 import { effectiveTime, resolveTime, type FilterState } from '../lib/filters';
 import { actions, useFilters } from '../lib/filterStore';
 import { buildScope, findFlags, type Scope } from '../lib/selectors';
+import type { LossBasis } from '../lib/kpis';
 import { Segmented, StatusChip } from '../components/ui';
 
 export interface ViewProps {
@@ -26,6 +27,16 @@ export function useScope(opts: { onlyDepts?: number[]; deptOnly?: boolean; noIte
     [range, dept, cat, sub, item, region, districts, stores, idStores, flagged, rule, onlyKey, opts.deptOnly, opts.noItem],
   );
   return { state, update, range, scope };
+}
+
+/** Loss valuation in words, for loss column headers, tiles and tooltips. */
+export function lossBasisWord(basis: LossBasis): string {
+  return basis === 'cost' ? 'at cost' : 'at retail';
+}
+
+/** Tooltip for a loss $ column or tile under the current valuation. */
+export function lossTitle(basis: LossBasis, what = 'Known loss (KL1011)'): string {
+  return `${what}, valued ${lossBasisWord(basis)} (toggle: At cost | At retail). The workbook Recon Map maps Total Loss ($) to KL1011 "Known Loss Retail $"; cost vs retail is pending validation with the business.`;
 }
 
 export function ViewToggles({

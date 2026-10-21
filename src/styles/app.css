@@ -841,6 +841,18 @@ tr.is-stale td {
   display: inline-flex;
   gap: 4px;
   justify-content: flex-end;
+  align-items: flex-start;
+}
+.flag-stack {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 1px;
+}
+.flag-reason {
+  font-size: 10.5px;
+  color: var(--n5);
+  white-space: nowrap;
 }
 
 /* Sparkline */
@@ -1849,4 +1861,92 @@ tr.row-muted td,
   min-width: 0;
   width: 70px;
   height: 28px;
+}
+
+/* Known Loss Report */
+.side-buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: flex-end;
+  justify-content: flex-end;
+}
+.sku-filter {
+  align-items: flex-end;
+  margin: 4px 0 10px;
+}
+.sku-filter .field {
+  min-width: 280px;
+}
+.it-btn {
+  padding: 2px 8px;
+  font-size: 11.5px;
+}
+.it-btn.is-done {
+  opacity: 0.6;
+  cursor: default;
+}
+.mini-table td.wrap {
+  white-space: normal;
+  min-width: 120px;
+}
+.collapse-head {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+  background: none;
+  border: 0;
+  padding: 0;
+  text-align: left;
+  cursor: pointer;
+  color: inherit;
+  font: inherit;
+}
+.collapse-head > span {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.collapse-head svg {
+  margin-top: 2px;
+  flex: none;
+}
+
+/* US date field (mm/dd/yyyy) with a calendar button */
+.date-field {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+.date-field .text-input {
+  width: 132px;
+  padding-right: 30px;
+}
+.date-field.is-invalid .text-input {
+  border-color: var(--neg);
+}
+.date-btn {
+  position: absolute;
+  right: 4px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border: 0;
+  background: none;
+  color: var(--n5);
+  cursor: pointer;
+}
+.date-btn:hover:not(:disabled) {
+  color: var(--dark);
+}
+.date-native {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+  pointer-events: none;
 }

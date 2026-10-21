@@ -31,7 +31,7 @@ import {
   type PurchaseBreakdown,
 } from '../lib/kpis';
 import { addBreakdown, freshStoreDays, freshStoreWeeks, storeCatLoss, trendWeeks, zeroBreakdown, type StoreWeekFresh } from '../lib/selectors';
-import { useScope, ViewToggles, type ViewProps } from './common';
+import { lossBasisWord, lossTitle, useScope, ViewToggles, type ViewProps } from './common';
 
 interface Node {
   sales: number;
@@ -291,7 +291,7 @@ export function FreshReportView({ openDefinitions }: ViewProps) {
     { key: 'gm', label: 'Gross Margin $', title: 'Fresh Report gross profit: Gross Sales − Total Purchases', group: 'Margin' },
     { key: 'gmr', label: 'Gross Margin Rate', title: 'Fresh Report: (Gross Sales − Total Purchases) ÷ Gross Sales', group: 'Margin' },
     { key: 'purch', label: 'Total Purchases', title: 'Total purchase cost after trade rates (Fresh Report channels)', group: 'Cost' },
-    { key: 'loss', label: 'Total Loss ($)', title: 'Known loss (KL1011)', group: 'Loss' },
+    { key: 'loss', label: `Total Loss ($) · ${lossBasisWord(state.lossBasis)}`, title: lossTitle(state.lossBasis), group: 'Loss' },
     { key: 'budget', label: 'Budget GP %', title: 'Fresh Report budget, weighted by sales', group: 'Budget' },
     { key: 'vsBudget', label: 'vs Budget', title: 'Fresh gross profit rate − Budget GP %, in points', group: 'Budget' },
     { key: 'mal', label: 'Margin After Loss %', title: 'Proposed: Gross Margin Rate − loss rate (actual known loss or the expected rate)', group: 'Margin', defaultHidden: true },
@@ -476,9 +476,9 @@ export function FreshReportView({ openDefinitions }: ViewProps) {
     },
     {
       label: 'Total Loss ($)',
-      info: 'Known loss (KL1011), at cost by default, excluding flagged entries.',
+      info: `${lossTitle(state.lossBasis)} Likely entry errors are excluded by default.`,
       value: moneyCompact(total.loss),
-      sub: `${pct(lossPctOfSales(total.loss, total.sales))} of sales${daily ? ' · weekly loss prorated' : ''}`,
+      sub: `${pct(lossPctOfSales(total.loss, total.sales))} of sales · ${lossBasisWord(state.lossBasis)}${daily ? ' · weekly loss prorated' : ''}`,
     },
   ];
 
@@ -558,7 +558,7 @@ export function FreshReportView({ openDefinitions }: ViewProps) {
         </Banner>
       </BannerStack>
 
-      <ViewToggles margin />
+      <ViewToggles loss margin />
 
       <KeyFigures
         caption={`Key figures · ${productLabel} · ${describeStoreScope(state)} · ${range.fyLabel} · ${rangeLabel}`}

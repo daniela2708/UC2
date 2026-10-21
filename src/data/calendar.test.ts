@@ -82,3 +82,16 @@ describe('fiscal calendar', () => {
     expect(formatDay(weekStartDay(holidaySpan('easter', 2026).startWeek))).toBe('03/29/2026');
   });
 });
+
+describe('US date format', () => {
+  it('parses mm/dd/yyyy and rejects other formats and impossible dates', async () => {
+    const { dayFromUS, dayFromYMD, formatDay } = await import('./calendar');
+    expect(dayFromUS('10/18/2026')).toBe(dayFromYMD(2026, 10, 18));
+    expect(dayFromUS('1/5/2025')).toBe(dayFromYMD(2025, 1, 5));
+    expect(formatDay(dayFromUS('01/05/2025')!)).toBe('01/05/2025');
+    expect(dayFromUS('18/10/2026')).toBeNull();
+    expect(dayFromUS('2026-10-18')).toBeNull();
+    expect(dayFromUS('02/30/2025')).toBeNull();
+    expect(dayFromUS('')).toBeNull();
+  });
+});

@@ -29,6 +29,13 @@ export function dayFromISO(iso: string): number | null {
   return dayFromYMD(y, mo, d);
 }
 
+/** Parses MM/DD/YYYY (US format, as shown everywhere in the app). Returns null for anything else, including impossible dates. */
+export function dayFromUS(text: string): number | null {
+  const m = /^(\d{1,2})\/(\d{1,2})\/(\d{4})$/.exec(text.trim());
+  if (!m) return null;
+  return dayFromISO(`${m[3]}-${m[1].padStart(2, '0')}-${m[2].padStart(2, '0')}`);
+}
+
 function dateOf(day: number): Date {
   return new Date(EPOCH_UTC + day * DAY_MS);
 }

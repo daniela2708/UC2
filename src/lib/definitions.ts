@@ -1,6 +1,6 @@
 import type { Status } from '../components/ui';
 
-export type ViewName = 'Category-Item Summary' | 'Item Cost Over Time' | 'Fresh Report' | 'Loss Review' | 'Cost Watch';
+export type ViewName = 'Category-Item Summary' | 'Item Cost Over Time' | 'Ingredients View' | 'Fresh Report' | 'Known Loss Report' | 'Cost Watch';
 
 export interface KpiDefinition {
   id: string;
@@ -21,11 +21,11 @@ export interface KpiDefinition {
 const EASS = 'EASS1048 Category Cost Report';
 const FRESH = 'Fresh Report (Accounting, Excel)';
 const KL = 'KL1011 Dept Known Loss by Item (WebFocus)';
-const DY = 'DY270 Fresh Shrink report';
 const BICEPS = 'Biceps ordering system (purchase orders)';
 const CI: ViewName = 'Category-Item Summary';
 const IC: ViewName = 'Item Cost Over Time';
 const FR: ViewName = 'Fresh Report';
+const KLR: ViewName = 'Known Loss Report';
 
 export const KPI_DEFINITIONS: KpiDefinition[] = [
   {
@@ -222,31 +222,45 @@ export const KPI_DEFINITIONS: KpiDefinition[] = [
     reconciliation: 'Matches KL1011 department totals once flagged entries are reviewed.',
     status: 'Pending validation',
     priority: 'Must',
-    views: [CI, FR],
+    views: [CI, FR, KLR],
+  },
+
+  {
+    id: 'known-loss-report',
+    name: 'Volume Sold, Sales ($), Known Loss (Units), Known Loss ($)',
+    unit: 'Units, $',
+    definition: 'Known Loss Report measures by Department › Category › Item and by Store Num. Volume never adds ea and lb. Sales ($) is Gross Sales. Store rows add up to the item table.',
+    formula: 'Σ units sold ; Σ Gross Sales ; Σ known loss units ; Σ known loss $',
+    source: KL,
+    reconciliation: 'Matches KL1011 by department, item and store once reported entry errors are removed.',
+    status: 'Draft',
+    priority: 'Must',
+    views: [KLR],
   },
   {
-    id: 'shrink-components',
-    name: 'Donations, Salvage, Recall, Markdown',
-    unit: '$',
-    definition: 'Other shrink reported outside known loss. Donations, salvage and recall at cost; markdown is POS price overrides plus department coupons, at retail.',
-    formula: 'Σ by item and week',
-    source: DY,
-    reconciliation: 'Matches DY270 totals by department and week.',
-    status: 'Draft',
-    views: ['Loss Review'],
+    id: 'it-review-list',
+    name: 'IT review list',
+    unit: 'list',
+    definition: 'Flagged entries a category manager reports to IT for removal. Session only: no backend and no email; "Export list for IT" (CSV or Excel) is the hand-off.',
+    formula: 'Columns: item, SKU Number, store, district, week, known loss units, UoM, known loss $, reason. Text values starting with =, +, -, @, tab or carriage return are prefixed with a single quote in the CSV.',
+    source: KL,
+    reconciliation: 'IT confirms each removed entry against KL1011.',
+    status: 'Proposed',
+    priority: 'Proposed',
+    views: [KLR],
   },
   {
     id: 'high-loss-flag',
     name: 'High Loss Flag',
     unit: 'T / F',
     definition:
-      'Loss above a threshold for a given week. "Likely entry error": loss units above 20× the item-store typical weekly loss units, or above the $100,000 plausibility cap. "High loss to review": weekly loss above $1,000 and more than 100 % above the 26-week rolling average.',
-    formula: 'Weekly loss > threshold $ AND > (1 + threshold %) × item-store 26-week average',
-    source: `${KL} (proposed rule)`,
-    reconciliation: 'Every flagged entry is reviewed with the store before it enters the official total.',
-    status: 'Proposed',
+      'Loss higher than $1,000 in a given week, for an item in a store. Proposed refinement, shown only as a secondary label: "Likely entry error" (loss units above 20× the item-store typical weekly loss units, or above the $100,000 plausibility cap) or "High loss to review". An optional 26-week rule (loss also more than 100 % above the item-store 26-week average) is available in the Flag rules popover, off by default.',
+    formula: 'Weekly known loss $ (item × store × week) > 1,000. Exactly $1,000.00 is not flagged.',
+    source: KL,
+    reconciliation: 'Category managers report likely entry errors to IT ("Report to IT", "Export list for IT") so they are removed from known loss.',
+    status: 'Draft',
     priority: 'Must',
-    views: [CI, 'Loss Review'],
+    views: [CI, KLR]
   },
   {
     id: 'ly',
@@ -349,18 +363,7 @@ KPI_DEFINITIONS.push(
     priority: 'Proposed',
     views: [CI, IC, 'Cost Watch'],
   },
-  {
-    id: 'new-items',
-    name: 'New items watch',
-    unit: 'list',
-    definition: 'Items in their first 12 weeks since first sale (week 12 included, week 13 not), with weekly sales and loss. Mirrors the weekly report the Deli team runs.',
-    formula: 'weeks on sale = last week − first sale week + 1 ≤ 12',
-    source: `Scan Data · ${KL}`,
-    reconciliation: 'Matches the Deli new-items report.',
-    status: 'Proposed',
-    priority: 'Proposed',
-    views: ['Loss Review'],
-  },
+
   {
     id: 'simulator',
     name: 'Cost change simulator',
