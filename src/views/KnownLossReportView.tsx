@@ -16,7 +16,7 @@ import { ExportButton } from '../components/ExportButton';
 import { describeProductScope, describeStoreScope } from '../lib/filters';
 import { count, money, moneyCompact, pct, volume } from '../lib/format';
 import { flagReason } from '../lib/itReport';
-import { lossPctOfSales, totalLoss, type LossBasis } from '../lib/kpis';
+import { HIGH_LOSS_FLAG_TIP, lossPctOfSales, totalLoss, type LossBasis } from '../lib/kpis';
 import { addAgg, emptyAgg, findFlags, isEntryError, itemAggregates, newItemsWatch, storeKnownLoss, type Agg, type FlagHit } from '../lib/selectors';
 import { extremeInScope, incompleteStores, lossBasisWord, lossTitle, useScope, ViewToggles, type ViewProps } from './common';
 
@@ -41,7 +41,7 @@ function itemCols(basis: LossBasis): HierCol[] {
     { key: 'klu', label: 'Known Loss (Units)', title: 'Units scanned out as known loss', group: 'Loss' },
     { key: 'kl', label: `Known Loss ($) · ${lossBasisWord(basis)}`, title: lossTitle(basis), group: 'Loss' },
     { key: 'lossPct', label: 'Loss % of sales', title: `Known Loss ($, ${lossBasisWord(basis)}) ÷ Sales ($)`, group: 'Loss', defaultHidden: true },
-    { key: 'flag', label: 'High Loss Flag', title: 'Item-store-weeks with known loss above $1,000 at cost (workbook); reason labels are proposed', group: 'Loss' },
+    { key: 'flag', label: 'High Loss Flag', title: HIGH_LOSS_FLAG_TIP, group: 'Loss' },
   ];
 }
 
@@ -147,7 +147,7 @@ export function KnownLossReportView({ openDefinitions }: ViewProps) {
     { label: 'Loss % of sales', info: 'Known Loss ($) ÷ Sales ($).', value: pct(lossPctOfSales(lossShown, total.gross)), sub: `of ${moneyCompact(total.gross)} sales` },
     {
       label: 'High Loss Flags',
-      info: 'Item-store-weeks with known loss higher than $1,000 (workbook definition).',
+      info: HIGH_LOSS_FLAG_TIP,
       value: count(flags.length),
       sub: `${count(errors.length)} likely entry error${errors.length === 1 ? '' : 's'} (proposed label)`,
     },
@@ -252,7 +252,8 @@ export function KnownLossReportView({ openDefinitions }: ViewProps) {
         tiles={tiles}
         note={
           <>
-            High Loss Flag: known loss higher than $1,000 for an item in a store in a given week.{' '}
+            High Loss Flag: known loss higher than $1,000 for an item in a store in a given week. Threshold basis: at cost, assumed{' '}
+            <StatusChip status="Pending validation" /> (open question 3).{' '}
             <button type="button" className="btn-link" onClick={() => openDefinitions('high-loss-flag')}>
               See definitions
             </button>
@@ -423,7 +424,7 @@ export function KnownLossReportView({ openDefinitions }: ViewProps) {
           <div className="side-actions">
             <div>
               <h3 className="side-title">Flagged entries · {count(skuFlags.length)}</h3>
-              <p className="side-sub">Item-store-weeks with known loss above $1,000, largest first · known loss at cost (the $1,000 flag is at cost){skuName ? ` · ${skuName}` : ''}</p>
+              <p className="side-sub">Item-store-weeks with known loss above $1,000, largest first · known loss at cost (threshold basis assumed at cost, pending validation){skuName ? ` · ${skuName}` : ''}</p>
             </div>
             <div className="side-buttons">
               <ReportToItButton flags={skuFlags.filter(isEntryError)} label="Report all likely errors" />

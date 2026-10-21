@@ -44,11 +44,12 @@ import {
 
 // ---------------------------------------------------------------- Types
 
-export type TabId = 'items' | 'itemcost' | 'fresh' | 'loss' | 'cost';
+export type TabId = 'items' | 'itemcost' | 'ingredients' | 'fresh' | 'loss' | 'cost';
 /** The workbook's required views come first; the rest are proposed additional views. */
 export const TABS: { id: TabId; label: string; required: boolean }[] = [
   { id: 'items', label: 'Category-Item Summary', required: true },
   { id: 'itemcost', label: 'Item Cost Over Time', required: true },
+  { id: 'ingredients', label: 'Ingredients View', required: true },
   { id: 'fresh', label: 'Fresh Report', required: true },
   { id: 'loss', label: 'Known Loss Report', required: true },
   { id: 'cost', label: 'Cost Watch', required: false },
@@ -103,8 +104,12 @@ export interface FilterState {
   costType: CostTypeFilter;
   /** PO (real-time) or HQ cost for PLU and random-weight items; UPC always uses HQ average cost. */
   costSource: CostSource;
-  /** Item shown in Item Cost Over Time (-1 = default: largest cost change). */
+  /** Item shown in Item Cost Over Time (-1 = default: Roma tomatoes, or the largest cost change). */
   icItem: number;
+  /** Item Cost Over Time: PO cost by fiscal week or fiscal period (period-based PO cost, Proposed). */
+  costPeriod: 'week' | 'period';
+  /** Composite PLU shown in the Ingredients View (-1 = default: 16 in. Pepperoni Pizza). */
+  igItem: number;
   /** Visible columns per table, only when changed from the table's default. */
   cols: Record<string, string[]>;
   /** Margin After Loss: subtract actual known loss or the expected rate. */
@@ -152,6 +157,7 @@ export function tabDefaultTime(tab: TabId): TimeSel {
     case 'fresh':
       return { ...BASE_TIME, mode: 'todate', toDate: 'ptd' };
     case 'itemcost':
+    case 'ingredients':
       return { ...BASE_TIME, mode: 'rolling', rolling: 26 };
     default:
       return { ...BASE_TIME };
@@ -177,6 +183,8 @@ export const DEFAULT_STATE: FilterState = {
   costType: 'all',
   costSource: 'po',
   icItem: -1,
+  costPeriod: 'week',
+  igItem: -1,
   cols: {},
   lossRateBasis: 'actual',
   expLoss: { ...DEFAULT_EXPECTED_LOSS },
@@ -191,9 +199,14 @@ export function unusedFilters(tab: TabId): { time?: string; product?: string; sk
       stores: 'Purchase orders are placed for the chain, so Region, District and Store do not apply. Business filters only narrow the SKU list.',
       sku: 'Pick the item with the SKU / PLU picker at the top of the view.',
     };
+  if (tab === 'ingredients')
+    return {
+      stores: 'Recipes and ingredient costs are the same in every store, so Region, District and Store do not apply.',
+      sku: 'Pick the PLU with the picker at the top of the view. Department and Category narrow the list.',
+    };
   if (tab === 'cost')
     return {
-      time: 'Cost Watch compares the cost in HQ with the last 4 weeks of purchase orders, as of 10/18/2026.',
+      time: 'Cost Watch compares the cost in HQ with the PO cost of the last complete week (FY2026 W42), as of 10/18/2026.',
       stores: 'Purchase orders and HQ costs are chain level.',
       sku: 'Cost Watch ranks every item; click a row to open it in Item Cost Over Time.',
     };
@@ -511,6 +524,8 @@ export function toQuery(s: FilterState): string {
   if (s.costType !== 'all') p.set('ct', s.costType);
   if (s.costSource !== 'po') p.set('cs', s.costSource);
   if (s.icItem >= 0) p.set('ic', ITEMS[s.icItem].code);
+  if (s.costPeriod !== 'week') p.set('cp', s.costPeriod);
+  if (s.igItem >= 0) p.set('ig', ITEMS[s.igItem].code);
   const cols = Object.entries(s.cols)
     .map(([t, keys]) => `${t}:${keys.join('.')}`)
     .join(';');
@@ -586,6 +601,9 @@ export function fromQuery(query: string): FilterState {
   s.costSource = p.get('cs') === 'hq' ? 'hq' : 'po';
   const ic = p.get('ic');
   if (ic && /^\d{4,12}$/.test(ic)) s.icItem = ITEMS.find((x) => x.code === ic)?.idx ?? -1;
+  s.costPeriod = p.get('cp') === 'period' ? 'period' : 'week';
+  const ig = p.get('ig');
+  if (ig && /^\d{4,12}$/.test(ig)) s.igItem = ITEMS.find((x) => x.code === ig && !!x.composite)?.idx ?? -1;
   // Column choices: "table:key.key;table:key", tokens limited to letters and digits.
   const colsRaw = p.get('cols');
   if (colsRaw && colsRaw.length <= 1000) {

@@ -39,6 +39,9 @@ export const C = {
   soft: '#cde2fb',
 };
 
+/** Categorical colors for series beyond the core four (ingredients, components). */
+export const SERIES = [C.s1, C.s2, C.s3, C.s4, '#6250d6', '#e87ba4', '#0f9fb5', '#8a6d3b'];
+
 export interface LegendItem {
   label: string;
   color: string;
@@ -635,10 +638,12 @@ export const ChartGrid = ({ children, cols = 2 }: { children: ReactNode; cols?: 
 
 export interface CostQtyPoint {
   x: string;
+  /** PO Cost / Unit for the bucket; null when nothing was bought (drawn as a gap). */
   cost: number | null;
+  /** Current PO Cost (HQ) in force in the bucket. */
+  hq: number;
   retail: number | null;
   qty: number;
-  cases: number;
 }
 
 /**
@@ -647,16 +652,16 @@ export interface CostQtyPoint {
  */
 export function CostQtyPanels({
   data,
-  hq,
   showRetail,
   fmtCost,
   fmtQty,
   qtyLabel,
+  costLabel = 'PO cost / unit',
   width,
   height,
 }: {
   data: CostQtyPoint[];
-  hq: number;
+  costLabel?: string;
   showRetail: boolean;
   fmtCost: (v: number) => string;
   fmtQty: (v: number) => string;
@@ -667,19 +672,20 @@ export function CostQtyPanels({
   const h = height ?? 380;
   const topH = Math.round(h * 0.62);
   const botH = h - topH;
-  const costs = data.flatMap((d) => [d.cost, showRetail ? d.retail : null]).filter((v): v is number => typeof v === 'number');
-  const lo = Math.min(hq, ...costs);
-  const hi = Math.max(hq, ...costs);
+  const costs = data.flatMap((d) => [d.cost, d.hq, showRetail ? d.retail : null]).filter((v): v is number => typeof v === 'number');
+  const lo = Math.min(...costs);
+  const hi = Math.max(...costs);
+  const lastHq = data.length ? data[data.length - 1].hq : null;
   const pad = Math.max((hi - lo) * 0.1, hi * 0.02, 0.01);
   const tip = ({ active, payload, label }: { active?: boolean; payload?: { payload?: unknown }[]; label?: string | number }) => {
     if (!active || !payload?.length) return null;
     const p = payload[0].payload as CostQtyPoint;
     const rows: TipRow[] = [
-      { label: 'PO cost / unit', value: p.cost === null ? 'No orders' : fmtCost(p.cost), color: C.s1 },
-      { label: 'Current PO Cost (HQ)', value: fmtCost(hq), color: C.axis },
+      { label: costLabel, value: p.cost === null ? 'No purchases (gap)' : fmtCost(p.cost), color: C.s1 },
+      { label: 'Current PO Cost (HQ)', value: fmtCost(p.hq), color: C.axis },
     ];
     if (showRetail && p.retail !== null) rows.push({ label: 'Retail', value: fmtCost(p.retail), color: C.s3 });
-    rows.push({ label: qtyLabel, value: `${fmtQty(p.qty)}${p.cases ? ` · ${p.cases.toLocaleString('en-US')} cases` : ''}`, color: C.s2 });
+    rows.push({ label: qtyLabel, value: fmtQty(p.qty), color: C.s2 });
     return <TipBox title={String(label)} rows={rows} />;
   };
   return (
@@ -687,15 +693,21 @@ export function CostQtyPanels({
       <LineChart width={width} height={topH} data={data} syncId="itemcost" margin={{ top: 10, right: 76, bottom: 0, left: 4 }}>
         <XAxis dataKey="x" hide />
         <YAxis {...axisProps} width={60} tickFormatter={fmtCost} domain={[lo - pad, hi + pad]} allowDataOverflow />
-        <ReferenceLine
-          y={hq}
-          stroke={C.axis}
-          strokeDasharray="5 4"
-          strokeWidth={1.5}
-          label={{ value: `HQ ${fmtCost(hq)}`, position: 'right', fill: C.axis, fontSize: 11 }}
-        />
         <Tooltip content={tip} cursor={{ stroke: C.axis, strokeWidth: 1 }} />
-        <Line type="stepAfter" dataKey="cost" stroke={C.s1} strokeWidth={2} dot={false} connectNulls isAnimationActive={false} activeDot={{ r: 4.5, stroke: '#fff', strokeWidth: 2 }} />
+        <Line type="stepAfter" dataKey="hq" stroke={C.axis} strokeDasharray="5 4" strokeWidth={1.5} dot={false} isAnimationActive={false} activeDot={false} />
+        {lastHq !== null && (
+          <ReferenceLine y={lastHq} stroke="none" label={{ value: `HQ ${fmtCost(lastHq)}`, position: 'right', fill: C.axis, fontSize: 11 }} />
+        )}
+        <Line
+          type="linear"
+          dataKey="cost"
+          stroke={C.s1}
+          strokeWidth={2}
+          dot={data.length <= 16 ? { r: 2.5, fill: C.s1, strokeWidth: 0 } : false}
+          connectNulls={false}
+          isAnimationActive={false}
+          activeDot={{ r: 4.5, stroke: '#fff', strokeWidth: 2 }}
+        />
         {showRetail && <Line type="stepAfter" dataKey="retail" stroke={C.s3} strokeWidth={2} dot={false} connectNulls isAnimationActive={false} />}
       </LineChart>
       <BarChart width={width} height={botH} data={data} syncId="itemcost" margin={{ top: 6, right: 76, bottom: 0, left: 4 }} barCategoryGap="20%">
@@ -705,5 +717,44 @@ export function CostQtyPanels({
         <Bar dataKey="qty" fill={C.s2} radius={[3, 3, 0, 0]} maxBarSize={14} isAnimationActive={false} />
       </BarChart>
     </div>
+  );
+}
+
+// ---------------------------------------------------------------- Stacked columns
+
+/** Stacked columns by category (e.g. each ingredient's contribution to unit cost by week), total in the tooltip. */
+export function StackedBars({
+  data,
+  series,
+  format,
+  tickFormat,
+  width,
+  height,
+}: {
+  data: Record<string, number | string>[];
+  series: { key: string; label: string; color: string }[];
+  format: (v: number) => string;
+  tickFormat: (v: number) => string;
+  width?: number;
+  height?: number;
+}) {
+  return (
+    <BarChart width={width} height={height} data={data} margin={{ top: 8, right: 8, bottom: 0, left: 4 }} barCategoryGap="18%">
+      <XAxis dataKey="x" {...axisProps} interval="preserveStartEnd" minTickGap={24} />
+      <YAxis {...axisProps} width={56} tickFormatter={tickFormat} />
+      <Tooltip
+        cursor={{ fill: 'rgba(33,30,30,0.05)' }}
+        content={({ active, payload, label }) => {
+          if (!active || !payload?.length) return null;
+          const row = payload[0].payload as Record<string, number>;
+          const rows: TipRow[] = [...series].reverse().map((sr) => ({ label: sr.label, value: format(row[sr.key] ?? 0), color: sr.color }));
+          rows.push({ label: 'Total unit cost', value: format(series.reduce((a, sr) => a + (row[sr.key] ?? 0), 0)) });
+          return <TipBox title={String(label)} rows={rows} />;
+        }}
+      />
+      {series.map((sr, n) => (
+        <Bar key={sr.key} dataKey={sr.key} stackId="s" fill={sr.color} maxBarSize={28} isAnimationActive={false} radius={n === series.length - 1 ? [3, 3, 0, 0] : undefined} />
+      ))}
+    </BarChart>
   );
 }

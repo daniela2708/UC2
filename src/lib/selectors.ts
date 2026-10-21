@@ -44,7 +44,7 @@ import {
   type Uom,
 } from './kpis';
 import { itemIndices, storeIndices, type CostSource, type FilterState, type ResolvedRange } from './filters';
-import { hqUnitCostWeek, newPoCost, poUnitCostWeek, supplyOf } from '../data/purchasing';
+import { hqUnitCostWeek, newPoCostInfo, poCostFromWeek, poTotals, poUnitCostWeek, supplyOf } from '../data/purchasing';
 
 // ---------------------------------------------------------------- Memo
 
@@ -308,10 +308,15 @@ export interface Agg {
   netLb: number;
   costEa: number;
   costLb: number;
-  /** Σ PO cost per unit × units sold. */
+  /**
+   * PO Cost / Unit numerator and denominator (period-based): PLU and random weight = PO spend ÷ volume purchased;
+   * UPC = average cost × units sold; composite PLUs = recipe cost × units sold.
+   */
   poEa: number;
   poLb: number;
-  /** Merchandise purchases allocated to the item (Total Purchases). */
+  poUnitsEa: number;
+  poUnitsLb: number;
+  /** Total Purchases: PO spend (Biceps); UPC: warehouse bill-out; composite PLUs: production cost (recipe). */
   purch: number;
   purchEa: number;
   purchLb: number;
@@ -323,13 +328,17 @@ export interface Agg {
   costAlt: number;
   /** Flags in the "Likely entry error" tier. */
   errFlags: number;
-  /** Units purchased (merchandise purchases ÷ landed PO cost), by unit of measure. */
+  /** Volume purchased (UPC: shipped; composite PLUs: produced = sold + known loss), by unit of measure. */
   purchUnitsEa: number;
   purchUnitsLb: number;
   /** Warehouse bill-out: value and units shipped. Outside vendors (C&S, DSD) not included. */
   shipVal: number;
   shipEa: number;
   shipLb: number;
+  /** Items whose Total Purchases come from Biceps POs, warehouse bill-out or the recipe (to note mixed sources). */
+  srcPo: number;
+  srcBill: number;
+  srcRecipe: number;
 }
 
 export function emptyAgg(): Agg {
@@ -357,6 +366,8 @@ export function emptyAgg(): Agg {
     costLb: 0,
     poEa: 0,
     poLb: 0,
+    poUnitsEa: 0,
+    poUnitsLb: 0,
     purch: 0,
     purchEa: 0,
     purchLb: 0,
@@ -370,6 +381,9 @@ export function emptyAgg(): Agg {
     shipVal: 0,
     shipEa: 0,
     shipLb: 0,
+    srcPo: 0,
+    srcBill: 0,
+    srcRecipe: 0,
   };
 }
 
@@ -386,6 +400,15 @@ export function volumeOf(a: Agg, uom: Uom): number {
 export interface ItemAgg extends Agg {
   item: number;
   flagReasons: string[];
+  /** Earliest week whose PO cost was carried into a week without purchases (−1 when none), for the "cost from W38" marker. */
+  costFrom: number;
+}
+
+/** Where an item's Total Purchases come from. */
+export type PurchaseSource = 'Biceps PO' | 'Warehouse bill-out' | 'Recipe';
+export function purchaseSource(i: number): PurchaseSource {
+  const it = ITEMS[i];
+  return it.composite ? 'Recipe' : it.costType === 'UPC' ? 'Warehouse bill-out' : 'Biceps PO';
 }
 
 /**
@@ -431,7 +454,7 @@ export function itemAggregates(scope: Scope, costBasis: readonly CostElement[], 
     const flags = findFlags(scope, lw0, lw1);
     const purchWeeks: number[] = [];
     for (let w = lw0; w <= lw1; w++) purchWeeks.push(w);
-    const { all: R, whse: Rw } = itemPurchaseFactor(scope, purchWeeks);
+    const { whse: Rw } = itemPurchaseFactor(scope, purchWeeks);
     const flagCount = new Map<number, number>();
     const errCount = new Map<number, number>();
     for (const f of flags) {
@@ -443,7 +466,7 @@ export function itemAggregates(scope: Scope, costBasis: readonly CostElement[], 
       const it = ITEMS[i];
       const c = it.cat;
       const d = it.dept;
-      const a = { ...emptyAgg(), item: i, flagReasons: [] as string[] };
+      const a: ItemAgg = { ...emptyAgg(), item: i, flagReasons: [], costFrom: -1 };
       const run = (ly: boolean) => {
         const off = ly ? 52 : 0;
         const dayOff = ly ? 364 : 0;
@@ -485,10 +508,25 @@ export function itemAggregates(scope: Scope, costBasis: readonly CostElement[], 
             const pc = m.poCost[i * NW + wk];
             const poUnit = poUnitCostWeek(i, wk);
             const lu = pc > 0 ? lossV / pc : 0;
-            const purch = wk <= LAST_COMPLETE_WEEK ? itemPurchasesWeek(R, i, wk) * frac : 0;
+            // The week in progress may still get its delivery, so only complete weeks count as "no purchases".
+            if (units > 0 && wk <= LAST_COMPLETE_WEEK && source === 'po' && it.costType !== 'UPC' && !it.composite) {
+              const from = poCostFromWeek(i, wk);
+              if (from !== wk && (a.costFrom < 0 || from < a.costFrom)) a.costFrom = from;
+            }
+            // Total Purchases and volume purchased for the store set (chain POs × the stores' share of the category).
+            let purch: number;
+            let purchUnits: number;
+            if (it.composite) {
+              purchUnits = units + lu;
+              purch = purchUnits * poUnit;
+            } else {
+              const t = poTotals(i, da, db);
+              purch = t.spend * f;
+              purchUnits = t.units * f;
+            }
+            const poNum = it.composite || it.costType === 'UPC' ? units * poUnit : purch;
+            const poDen = it.composite || it.costType === 'UPC' ? units : purchUnits;
             const ship = wk <= LAST_COMPLETE_WEEK ? itemPurchasesWeek(Rw, i, wk) * frac : 0;
-            // Units purchased and shipped, at this week's landed PO cost.
-            const purchUnits = poUnit > 0 ? purch / poUnit : 0;
             const shipUnits = poUnit > 0 ? ship / poUnit : 0;
             a.shipVal += ship;
             a.gross += gross;
@@ -505,7 +543,8 @@ export function itemAggregates(scope: Scope, costBasis: readonly CostElement[], 
               a.grossEa += gross;
               a.netEa += net;
               a.costEa += units * unitCost;
-              a.poEa += units * poUnit;
+              a.poEa += poNum;
+              a.poUnitsEa += poDen;
               a.purchEa += purch;
               a.lossUnitsEa += lu;
               a.purchUnitsEa += purchUnits;
@@ -515,7 +554,8 @@ export function itemAggregates(scope: Scope, costBasis: readonly CostElement[], 
               a.grossLb += gross;
               a.netLb += net;
               a.costLb += units * unitCost;
-              a.poLb += units * poUnit;
+              a.poLb += poNum;
+              a.poUnitsLb += poDen;
               a.purchLb += purch;
               a.lossUnitsLb += lu;
               a.purchUnitsLb += purchUnits;
@@ -526,6 +566,10 @@ export function itemAggregates(scope: Scope, costBasis: readonly CostElement[], 
       };
       run(false);
       if (r.lyAvailable) run(true);
+      const src = purchaseSource(i);
+      if (src === 'Recipe') a.srcRecipe = 1;
+      else if (src === 'Warehouse bill-out') a.srcBill = 1;
+      else a.srcPo = 1;
       const nf = flagCount.get(i) ?? 0;
       const ne = errCount.get(i) ?? 0;
       a.highFlags = nf + ne;
@@ -1446,6 +1490,8 @@ export interface CostWatchRow {
   hqUpdated: string;
   hqAgeMonths: number;
   next: number | null;
+  /** Week the New PO Cost comes from (the last complete week unless nothing was bought that week). */
+  nextWeek: number;
   gap: number | null;
   vendors: string[];
   units4w: number;
@@ -1458,7 +1504,7 @@ export interface CostWatchRow {
 const costWatchCache = new Map<string, CostWatchRow[]>();
 
 /**
- * PLU and random-weight items: HQ cost vs the recency-weighted New PO Cost of the last 4 weeks.
+ * PLU and random-weight items: HQ cost vs the New PO Cost (period-based PO cost of the last complete week).
  * Est. impact = (New PO Cost − HQ cost) × units sold in the same 4 weeks (chain): margin overstated in reports.
  */
 export function costWatchRows(scope: Scope): CostWatchRow[] {
@@ -1477,7 +1523,8 @@ export function costWatchRows(scope: Scope): CostWatchRow[] {
       }
       if (units <= 0) continue;
       const hq = sup.hqCost;
-      const next = newPoCost(i);
+      const info = newPoCostInfo(i);
+      const next = info.cost;
       const retail = safeDiv(sales, units);
       const ageMonths = Math.max(0, Math.round((AS_OF_MONTH_INDEX - monthIndex(sup.hqUpdatedDay)) * 1));
       out.push({
@@ -1486,6 +1533,7 @@ export function costWatchRows(scope: Scope): CostWatchRow[] {
         hqUpdated: sup.hqUpdatedLabel,
         hqAgeMonths: ageMonths,
         next,
+        nextWeek: info.week,
         gap: next === null || hq <= 0 ? null : next / hq - 1,
         vendors: sup.vendors.map((v) => v.name),
         units4w: units,

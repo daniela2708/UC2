@@ -25,12 +25,17 @@ export interface Sub {
   items: number[];
 }
 
+/** One recipe line: quantity of an ingredient per unit of the PLU, in the ingredient's unit of costing. */
 export interface Component {
   key: string;
   name: string;
-  /** Share of the recipe's standard cost when it was last updated. */
+  qty: number;
+  unit: IngredientUnit;
+  /** Share of the standard cost, used only to size quantities for recipes kept as cost shares. */
   share: number;
 }
+
+export type IngredientUnit = 'oz' | 'lb' | 'ea';
 
 export interface Composite {
   components: Component[];
@@ -119,40 +124,69 @@ export interface ComponentDef {
   discontinued?: boolean;
   /** Cost change from 03/2025 to 10/2026. */
   change: number;
+  /** Unit of costing. */
+  unit: IngredientUnit;
+  /** $ per unit of costing at 03/2025. */
+  base: number;
 }
 
-export const COMPONENTS: Record<string, ComponentDef> = {
-  dough16: { key: 'dough16', name: 'Pizza dough ball', change: 0.18 },
-  mozzarella: { key: 'mozzarella', name: 'Shredded mozzarella', change: 0.12 },
-  pepperoni: { key: 'pepperoni', name: 'Sliced pepperoni', change: 0.12 },
-  pizzaSauce: { key: 'pizzaSauce', name: 'Pizza sauce', change: 0.09 },
-  pizzaBox: { key: 'pizzaBox', name: '16 in. pizza box', change: 0.32 },
-  sausage: { key: 'sausage', name: 'Italian sausage crumbles', change: 0.06 },
-  vegTopping: { key: 'vegTopping', name: 'Peppers, onions and mushrooms', change: 0.05 },
-  chickenTopping: { key: 'chickenTopping', name: 'Diced chicken', change: 0.04 },
-  subRoll: { key: 'subRoll', name: '12 in. sub roll', change: 0.07 },
-  deliMeat: { key: 'deliMeat', name: 'Deli meats', change: 0.05 },
-  sliceCheese: { key: 'sliceCheese', name: 'Sliced cheese', change: 0.06 },
-  produceFill: { key: 'produceFill', name: 'Lettuce, tomato and onion', change: 0.08 },
-  condiments: { key: 'condiments', name: 'Condiments and dressing', change: 0.04 },
-  wrapPack: { key: 'wrapPack', name: 'Wrap film and label', change: 0.09 },
-  protein: { key: 'protein', name: 'Main protein', change: 0.04 },
-  fryOil: { key: 'fryOil', name: 'Breading and fry oil', change: 0.11 },
-  starch: { key: 'starch', name: 'Pasta, potatoes or rice', change: 0.03 },
-  vegSide: { key: 'vegSide', name: 'Vegetable side', change: 0.05 },
-  sauce: { key: 'sauce', name: 'Sauce and gravy', change: 0.04 },
-  container: { key: 'container', name: 'Hot food container', change: 0.09 },
-  trayMeat: { key: 'trayMeat', name: 'Tray meats', change: 0.05 },
-  trayCheese: { key: 'trayCheese', name: 'Tray cheeses', change: 0.06 },
-  crackers: { key: 'crackers', name: 'Club crackers (discontinued)', change: 0.03, discontinued: true },
-  garnish: { key: 'garnish', name: 'Garnish and dip', change: 0.05 },
-  trayLid: { key: 'trayLid', name: 'Platter and lid', change: 0.08 },
-  cakeBase: { key: 'cakeBase', name: 'Cake base', change: 0.06 },
-  icing: { key: 'icing', name: 'Buttercream icing', change: 0.07 },
-  filling: { key: 'filling', name: 'Filling', change: 0.05 },
-  decoration: { key: 'decoration', name: 'Decorations', change: 0.03 },
-  cakeBoard: { key: 'cakeBoard', name: 'Cake board and dome', change: 0.08 },
+const C = (key: string, name: string, unit: IngredientUnit, base: number, change: number, discontinued?: boolean): ComponentDef => ({ key, name, unit, base, change, discontinued });
+
+/** Ingredients, packaging included, with their unit of costing and 03/2025 cost. Base ingredients are shared across recipes. */
+export const COMPONENTS: Record<string, ComponentDef> = Object.fromEntries(
+  [
+    C('dough16', 'Pizza dough ball', 'lb', 0.6, 0.18),
+    C('mozzarella', 'Shredded mozzarella', 'oz', 0.16, 0.12),
+    C('pepperoni', 'Sliced pepperoni', 'oz', 0.26, 0.12),
+    C('pizzaSauce', 'Pizza sauce', 'oz', 0.05, 0.09),
+    C('pizzaBox', '16 in. pizza box', 'ea', 0.85, 0.32),
+    C('pizzaBox12', '12 in. pizza box', 'ea', 0.62, 0.3),
+    C('sausage', 'Italian sausage crumbles', 'oz', 0.2, 0.06),
+    C('vegTopping', 'Peppers, onions and mushrooms', 'oz', 0.08, 0.05),
+    C('chickenTopping', 'Diced chicken', 'oz', 0.22, 0.04),
+    C('subRoll', '12 in. sub roll', 'ea', 0.55, 0.07),
+    C('deliMeat', 'Deli meats', 'oz', 0.32, 0.05),
+    C('sliceCheese', 'Sliced cheese', 'oz', 0.24, 0.06),
+    C('produceFill', 'Lettuce, tomato and onion', 'oz', 0.06, 0.08),
+    C('condiments', 'Condiments and dressing', 'oz', 0.05, 0.04),
+    C('wrapPack', 'Wrap film and label', 'ea', 0.12, 0.09),
+    C('protein', 'Main protein', 'lb', 2.6, 0.04),
+    C('fryOil', 'Breading and fry oil', 'oz', 0.04, 0.11),
+    C('starch', 'Pasta, potatoes or rice', 'oz', 0.05, 0.03),
+    C('vegSide', 'Vegetable side', 'oz', 0.07, 0.05),
+    C('sauce', 'Sauce and gravy', 'oz', 0.06, 0.04),
+    C('container', 'Hot food container', 'ea', 0.35, 0.09),
+    C('trayMeat', 'Tray meats', 'lb', 4.2, 0.05),
+    C('trayCheese', 'Tray cheeses', 'lb', 3.8, 0.06),
+    C('crackers', 'Club crackers (discontinued)', 'oz', 0.14, 0.03, true),
+    C('garnish', 'Garnish and dip', 'oz', 0.08, 0.05),
+    C('trayLid', 'Platter and lid', 'ea', 2.4, 0.08),
+    C('cakeBase', 'Cake base', 'oz', 0.09, 0.06),
+    C('icing', 'Buttercream icing', 'oz', 0.11, 0.07),
+    C('filling', 'Filling', 'oz', 0.12, 0.05),
+    C('decoration', 'Decorations', 'ea', 0.6, 0.03),
+    C('cakeBoard', 'Cake board and dome', 'ea', 1.1, 0.08),
+  ].map((c) => [c.key, c]),
+);
+
+/**
+ * Pizza & stromboli recipes in real quantities per unit (one pie or one stromboli). Dough, mozzarella and
+ * sauce are shared by every pizza and stromboli; pepperoni by five of them. Slices take the pie's recipe ÷ 8.
+ */
+const PIZZA_RECIPES: Record<string, [string, number][]> = {
+  '16 in. Pepperoni Pizza': [['dough16', 1.25], ['mozzarella', 12], ['pizzaSauce', 6], ['pepperoni', 4], ['pizzaBox', 1]],
+  '16 in. Cheese Pizza': [['dough16', 1.25], ['mozzarella', 14], ['pizzaSauce', 6], ['pizzaBox', 1]],
+  '16 in. Supreme Pizza': [['dough16', 1.25], ['mozzarella', 12], ['pizzaSauce', 6], ['pepperoni', 2], ['sausage', 3], ['vegTopping', 4], ['pizzaBox', 1]],
+  '16 in. Meat Lovers Pizza': [['dough16', 1.25], ['mozzarella', 12], ['pizzaSauce', 6], ['pepperoni', 3], ['sausage', 4], ['pizzaBox', 1]],
+  '12 in. Pepperoni Pizza': [['dough16', 0.75], ['mozzarella', 7], ['pizzaSauce', 4], ['pepperoni', 2.5], ['pizzaBox12', 1]],
+  '12 in. Cheese Pizza': [['dough16', 0.75], ['mozzarella', 8], ['pizzaSauce', 4], ['pizzaBox12', 1]],
+  '16 in. Buffalo Chicken Pizza': [['dough16', 1.25], ['mozzarella', 12], ['chickenTopping', 6], ['condiments', 2], ['pizzaBox', 1]],
+  '16 in. White Pizza': [['dough16', 1.25], ['mozzarella', 14], ['condiments', 1.5], ['pizzaBox', 1]],
+  '16 in. Veggie Pizza': [['dough16', 1.25], ['mozzarella', 12], ['pizzaSauce', 6], ['vegTopping', 6], ['pizzaBox', 1]],
+  'Pepperoni Stromboli': [['dough16', 1], ['mozzarella', 8], ['pizzaSauce', 3], ['pepperoni', 4], ['wrapPack', 1]],
+  'Italian Stromboli': [['dough16', 1], ['mozzarella', 7], ['pizzaSauce', 3], ['pepperoni', 2], ['deliMeat', 3], ['wrapPack', 1]],
 };
+
 
 /** Recipes as [component, share] lists. Names select a variant; the default is the first. */
 const RECIPES: Record<string, (name: string) => [string, number][]> = {
@@ -345,11 +379,13 @@ function buildItem(raw: string, ctx: ItemContext): Item {
     costType: flag === 'e' ? 'UPC' : flag === 'w' ? 'RW' : 'PLU',
   };
   if (flag === 'c' && subSpec.recipe) {
-    const recipe = RECIPES[subSpec.recipe](name);
+    const pieName = name.replace(/ Slice$/, '');
+    const fixed = PIZZA_RECIPES[pieName];
+    const recipe = fixed ?? RECIPES[subSpec.recipe](name);
     const total = recipe.reduce((a, [, s]) => a + s, 0);
     const [uy, um] = updateMonth(name, i);
     const updatedDay = dayFromYMD(uy, um, 1);
-    item.margin = name === '16 in. Pepperoni Pizza' ? 0.45 : Math.min(0.66, Math.max(0.42, (d === 2 ? 0.56 : 0.6) + marginNoise));
+    item.margin = Math.min(0.66, Math.max(0.42, (d === 2 ? 0.56 : 0.6) + marginNoise));
     const family =
       subSpec.recipe === 'pizza'
         ? 'Pizza & stromboli'
@@ -365,7 +401,12 @@ function buildItem(raw: string, ctx: ItemContext): Item {
     item.composite = {
       family,
       sliceOf: /Slice$/.test(name) ? { item: name.replace(/ Slice$/, ''), slices: 8 } : undefined,
-      components: recipe.map(([key, share]) => ({ key, name: COMPONENTS[key].name, share: share / total })),
+      // Fixed recipes carry quantities now; share recipes get quantities when the standard cost is set (generate.ts).
+      components: recipe.map(([key, v]) => {
+        const def = COMPONENTS[key];
+        const slices = /Slice$/.test(name) ? 8 : 1;
+        return fixed ? { key, name: def.name, unit: def.unit, qty: v / slices, share: 0 } : { key, name: def.name, unit: def.unit, qty: 0, share: v / total };
+      }),
       updatedWeek: Math.max(0, Math.min(WEEK_COUNT - 1, weekOfDay(updatedDay))),
       updatedLabel: formatMonth(updatedDay),
       ageMonths: AS_OF_MONTHS - (uy * 12 + um),
@@ -462,11 +503,31 @@ export function componentIndex(key: string, week: number): number {
   return Math.exp(rate * (week - COMPONENT_BASE_WEEK));
 }
 
-/** Estimated current cost of a composite PLU from component cost movement since its last update. */
-export function estimatedCompositeCost(c: Composite, week = AS_OF_WEEK): number {
+const KEY_SALT = new Map(Object.keys(COMPONENTS).map((k, n) => [k, 900 + n]));
+
+/**
+ * Ingredient cost per unit of costing in a week: the 03/2025 cost along its trend, with small week-to-week
+ * movement from the ingredient's own purchase orders.
+ */
+export function ingredientUnitCost(key: string, week: number): number {
+  const def = COMPONENTS[key];
+  return def.base * componentIndex(key, week) * (1 + 0.012 * hashNormal(KEY_SALT.get(key) ?? 899, week, 931));
+}
+
+/** Recipe cost of a composite PLU with every ingredient at its cost in week `w` (optionally one ingredient overridden). */
+export function recipeCostAt(c: Composite, week: number, override?: { key: string; unitCost: number }): number {
   let cost = 0;
-  for (const comp of c.components) {
-    cost += c.standardCost * comp.share * (componentIndex(comp.key, week) / componentIndex(comp.key, c.updatedWeek));
-  }
+  for (const comp of c.components) cost += comp.qty * (override && override.key === comp.key ? override.unitCost : ingredientUnitCost(comp.key, week));
   return cost;
+}
+
+/** Estimated current cost of a composite PLU: its recipe at today's ingredient costs. */
+export function estimatedCompositeCost(c: Composite, week = AS_OF_WEEK): number {
+  return recipeCostAt(c, week);
+}
+
+/** Rounds a recipe quantity to the step a recipe card would use. */
+export function roundQty(qty: number, unit: IngredientUnit): number {
+  const step = unit === 'oz' ? 0.5 : unit === 'lb' ? 0.05 : 0.25;
+  return Math.max(step, Math.round(qty / step) * step);
 }

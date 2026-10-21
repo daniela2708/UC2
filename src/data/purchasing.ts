@@ -6,14 +6,16 @@
  * - HQ (Retalix) keeps one default cost per item, updated rarely (3–14 months ago) and without freight.
  * - UPC items come from the Weis distribution center; their HQ average cost tracks PO cost (reliable).
  * - Composite PLUs are costed from their recipe: HQ holds the Excel standard cost; the real-time cost
- *   re-prices every component at today's component cost.
+ *   re-prices every ingredient at its cost that week.
+ * - PO Cost / Unit for a period (week or fiscal period) = total PO spend in the period ÷ volume purchased in
+ *   the period. A period without purchases has no PO cost (a gap); margins then use the most recent PO cost.
  * Everything is derived from the seeded model, so it is deterministic.
  */
-import { AS_OF_DAY, dayFromYMD, formatMonth, globalWeek, LAST_COMPLETE_WEEK, weekOfDay, weekday } from './calendar';
+import { AS_OF_DAY, dayFromYMD, fiscalOfWeek, formatMonth, globalWeek, LAST_COMPLETE_WEEK, periodSpan, weekOfDay, weekday } from './calendar';
 import { getModel, ND, NW } from './generate';
-import { componentIndex, COMPONENTS, DEPTS, ITEMS, itemByName, type Item } from './products';
+import { COMPONENTS, DEPTS, ingredientUnitCost, ITEMS, itemByName, recipeCostAt, type IngredientUnit, type Item } from './products';
 import { hash01, hashNormal } from './prng';
-import { newPoCostWeighted } from '../lib/kpis';
+import { periodPoCost } from '../lib/kpis';
 
 export interface SupplyVendor {
   name: string;
@@ -194,72 +196,129 @@ export function caseCostFor(it: Item, sup: ItemSupply, v: number, day: number): 
   return Math.round(unit * sup.casePack * 100) / 100;
 }
 
-/** Units the chain buys on a delivery day: next days' sales plus loss, with a little timing noise. */
-function unitsOrdered(i: number, day: number, sup: ItemSupply): number {
+/** Units the chain uses on a day: units sold plus that week's known loss units spread over the week. */
+function unitsUsed(i: number, day: number): number {
   const m = getModel();
-  const k = sup.deliveryDays.indexOf(weekday(day));
-  const nextDay = sup.deliveryDays[(k + 1) % sup.deliveryDays.length];
-  const span = ((nextDay - sup.deliveryDays[k] + 7) % 7) || 7;
-  let units = 0;
-  for (let x = day; x < day + span; x++) {
-    const dd = Math.min(x, ND - 1);
-    units += m.dUnits[i * ND + dd];
+  const d = Math.min(day, ND - 1);
+  const w = Math.min(weekOfDay(d), LAST_COMPLETE_WEEK);
+  const pc = m.poCost[i * NW + w];
+  return m.dUnits[i * ND + d] + (pc > 0 ? m.lossCost[i * NW + w] / pc / 7 : 0);
+}
+
+/**
+ * Calls `cb` for every chain-level PO line of an item, oldest first, through the as-of date. Stores reorder up to
+ * par: on each delivery day the order covers use until the next delivery plus a safety stock, less what is on
+ * hand, in whole cases. So stock never runs out, and slow items with large cases skip deliveries (weeks without
+ * purchases). Composite PLUs are made in store (no POs).
+ */
+function forEachOrder(i: number, cb: (o: PurchaseOrder) => void): void {
+  const it = ITEMS[i];
+  if (it.composite) return;
+  const sup = supplyOf(i);
+  const main = sup.vendors.reduce((best, v, k) => (v.share > sup.vendors[best].share ? k : best), 0);
+  // Opening stock: one week of use.
+  let onHand = 0;
+  for (let day = 0; day < 7; day++) onHand += unitsUsed(i, day);
+  for (let day = 0; day <= AS_OF_DAY; day++) {
+    const k = sup.deliveryDays.indexOf(weekday(day));
+    if (k >= 0) {
+      const nextDay = sup.deliveryDays[(k + 1) % sup.deliveryDays.length];
+      const span = (nextDay - sup.deliveryDays[k] + 7) % 7 || 7;
+      let need = 0;
+      for (let x = day; x < day + span; x++) need += unitsUsed(i, x);
+      const target = need * (1.12 + 0.12 * hash01(i, day, 711));
+      const order = target - onHand;
+      if (need > 0 && order > 0) {
+        // Smaller vendors do not ship every delivery day; the main vendor covers their share.
+        const shares = sup.vendors.map((v, j) => (j !== main && v.share < 0.3 && hash01(i, day, j, 712) > 0.6 ? 0 : v.share));
+        shares[main] += 1 - shares.reduce((x, y) => x + y, 0);
+        sup.vendors.forEach((v, j) => {
+          if (shares[j] <= 0) return;
+          const cases = Math.ceil((order * shares[j]) / sup.casePack);
+          if (cases <= 0) return;
+          const cc = caseCostFor(it, sup, j, day);
+          const freight = Math.round(cc * sup.freightRate * 100) / 100;
+          onHand += cases * sup.casePack;
+          cb({ day, vendor: v.name, cases, casePack: sup.casePack, caseCost: cc, freight, unitCost: (cc + freight) / sup.casePack, units: cases * sup.casePack });
+        });
+      }
+    }
+    onHand -= unitsUsed(i, day);
   }
-  const w = Math.min(weekOfDay(day), LAST_COMPLETE_WEEK);
-  const lossUnits = m.poCost[i * NW + w] > 0 ? m.lossCost[i * NW + w] / m.poCost[i * NW + w] : 0;
-  units += (lossUnits * span) / 7;
-  return Math.max(0, units * (1 + 0.08 * hashNormal(i, day, 711)));
 }
 
 const orderCache = new Map<number, PurchaseOrder[]>();
 
-/** Every chain-level PO line for an item, oldest first, through the as-of date. Cached per item. */
+/** Every chain-level PO line for an item (UPC: Weis Distribution Center shipments to stores), oldest first. Cached per item. */
 export function ordersOf(i: number): PurchaseOrder[] {
   const hit = orderCache.get(i);
   if (hit) return hit;
-  const it = ITEMS[i];
-  const sup = supplyOf(i);
   const out: PurchaseOrder[] = [];
-  if (!it.composite) {
-    for (let day = 0; day <= AS_OF_DAY; day++) {
-      if (!sup.deliveryDays.includes(weekday(day))) continue;
-      const units = unitsOrdered(i, day, sup);
-      if (units <= 0) continue;
-      sup.vendors.forEach((v, k) => {
-        // Smaller vendors do not ship every delivery day.
-        if (v.share < 0.3 && hash01(i, day, k, 712) > 0.6) return;
-        const cases = Math.max(1, Math.round((units * v.share) / sup.casePack));
-        const cc = caseCostFor(it, sup, k, day);
-        const freight = Math.round(cc * sup.freightRate * 100) / 100;
-        out.push({
-          day,
-          vendor: v.name,
-          cases,
-          casePack: sup.casePack,
-          caseCost: cc,
-          freight,
-          unitCost: (cc + freight) / sup.casePack,
-          units: cases * sup.casePack,
-        });
-      });
-    }
-  }
+  forEachOrder(i, (o) => out.push(o));
+  if (orderCache.size > 60) orderCache.delete(orderCache.keys().next().value as number);
   orderCache.set(i, out);
   return out;
 }
 
+// ---------------------------------------------------------------- Daily PO spend and volume (Biceps)
+
+let daily: { spend: Float32Array; units: Float32Array } | null = null;
+
+/** PO spend (landed $) and volume purchased per item × day, for every item. UPC: bill-out at average cost. */
+function dailyPo(): { spend: Float32Array; units: Float32Array } {
+  if (daily) return daily;
+  const spend = new Float32Array(ITEMS.length * ND);
+  const units = new Float32Array(ITEMS.length * ND);
+  for (const it of ITEMS)
+    forEachOrder(it.idx, (o) => {
+      const k = it.idx * ND + Math.min(o.day, ND - 1);
+      spend[k] += (o.caseCost + o.freight) * o.cases;
+      units[k] += o.units;
+    });
+  daily = { spend, units };
+  return daily;
+}
+
+/** PO spend and volume purchased for one item over the days [d0, d1] (chain). */
+export function poTotals(i: number, d0: number, d1: number): { spend: number; units: number } {
+  const { spend, units } = dailyPo();
+  let sp = 0;
+  let u = 0;
+  for (let day = Math.max(0, d0); day <= Math.min(d1, ND - 1); day++) {
+    sp += spend[i * ND + day];
+    u += units[i * ND + day];
+  }
+  return { spend: sp, units: u };
+}
+
+/** Period-based PO Cost / Unit over [d0, d1]: PO spend ÷ volume purchased; null when nothing was bought. */
+export function poCostForDays(i: number, d0: number, d1: number): number | null {
+  const t = poTotals(i, d0, d1);
+  return periodPoCost(t.spend, t.units);
+}
+
+export interface NewPoCost {
+  cost: number | null;
+  /** Week the cost comes from (the last complete week, or the latest earlier week with purchases). */
+  week: number;
+}
+
 /**
- * New PO Cost: recency-weighted landed cost of the last 4 weeks of orders ending on `endDay`.
- * Week k back (0 = newest) weighs PO_WEEK_WEIGHTS[k] × quantity. Composite PLUs use the recipe at today's
- * component costs. Null when nothing was bought.
+ * New PO Cost (Cost Watch): period-based PO cost of the last complete week. When nothing was bought that week,
+ * the latest earlier week with purchases ("as of W41"). Composite PLUs: the recipe at that week's ingredient costs.
  */
-export function newPoCost(i: number, endDay = AS_OF_DAY): number | null {
+export function newPoCostInfo(i: number, endWeek = LAST_COMPLETE_WEEK): NewPoCost {
   const it = ITEMS[i];
-  if (it.composite) return compositeCostAt(it, weekOfDay(endDay));
-  const lines = ordersOf(i)
-    .filter((o) => o.day <= endDay && o.day > endDay - 28)
-    .map((o) => ({ weeksBack: Math.floor((endDay - o.day) / 7), units: o.units, unitCost: o.unitCost }));
-  return newPoCostWeighted(lines);
+  if (it.composite) return { cost: recipeCostAt(it.composite, endWeek), week: endWeek };
+  for (let w = endWeek; w >= Math.max(0, endWeek - 52); w--) {
+    const c = poCostForDays(i, w * 7, w * 7 + 6);
+    if (c !== null) return { cost: c, week: w };
+  }
+  return { cost: null, week: endWeek };
+}
+
+export function newPoCost(i: number, endWeek = LAST_COMPLETE_WEEK): number | null {
+  return newPoCostInfo(i, endWeek).cost;
 }
 
 /** Current PO Cost: the per-unit cost held in HQ / Retalix. */
@@ -267,137 +326,105 @@ export function currentPoCost(i: number): number {
   return supplyOf(i).hqCost;
 }
 
-/** Recipe cost of a composite PLU with every component at its cost in week `w`. */
+/** Recipe cost of a composite PLU with every ingredient at its cost in week `w`. */
 export function compositeCostAt(it: Item, w: number): number {
-  const c = it.composite!;
-  let cost = 0;
-  for (const comp of c.components) cost += c.standardCost * comp.share * (componentIndex(comp.key, w) / componentIndex(comp.key, c.updatedWeek));
-  return cost;
+  return recipeCostAt(it.composite!, w);
 }
 
+export type CostPeriod = 'week' | 'period';
+
 export interface CostPoint {
-  /** First day of the bucket (a day, or a week's Sunday). */
+  /** First day of the bucket (the week's or the fiscal period's Sunday). */
   day: number;
-  /** Quantity-weighted landed PO cost per unit, null when nothing was bought in the bucket. */
+  /** Last global week in the bucket. */
+  week: number;
+  /** Period-based PO Cost / Unit: PO spend ÷ volume purchased; null when nothing was bought (a gap). */
   cost: number | null;
+  /** Current PO Cost (HQ) in force at the end of the bucket. */
+  hq: number;
+  /** Volume purchased (composite PLUs: units produced = sold + known loss units). */
   units: number;
-  cases: number;
+  spend: number;
 }
 
 /**
- * Real-time PO cost and quantity purchased over [d0, d1] at day grain, or week grain when the range
- * is longer than 26 weeks. Composite PLUs: recipe cost by week, quantity = units sold (made to sell).
+ * PO Cost / Unit and volume purchased by fiscal week or fiscal period over the weeks [w0, w1].
+ * Composite PLUs: recipe cost weighted by units produced.
  */
-export function costSeries(i: number, d0: number, d1: number): { grain: 'day' | 'week'; points: CostPoint[] } {
-  const grain: 'day' | 'week' = d1 - d0 + 1 > 26 * 7 ? 'week' : 'day';
+export function costSeries(i: number, w0: number, w1: number, grain: CostPeriod = 'week'): CostPoint[] {
   const it = ITEMS[i];
   const m = getModel();
-  const key = (day: number) => (grain === 'day' ? day : weekOfDay(day) * 7);
-  const buckets = new Map<number, { num: number; units: number; cases: number }>();
-  for (let day = d0; day <= d1; day += grain === 'day' ? 1 : 7) buckets.set(key(day), { num: 0, units: 0, cases: 0 });
-  if (it.composite) {
-    for (let day = d0; day <= d1; day++) {
-      const b = buckets.get(key(day));
-      if (!b) continue;
-      const u = m.dUnits[i * ND + Math.min(day, ND - 1)];
-      b.num += u * compositeCostAt(it, weekOfDay(day));
-      b.units += u;
-    }
-  } else {
-    for (const o of ordersOf(i)) {
-      if (o.day < d0 || o.day > d1) continue;
-      const b = buckets.get(key(o.day));
-      if (!b) continue;
-      b.num += o.unitCost * o.units;
-      b.units += o.units;
-      b.cases += o.cases;
+  const buckets: { w0: number; w1: number }[] = [];
+  for (let w = w0; w <= w1; ) {
+    if (grain === 'week') {
+      buckets.push({ w0: w, w1: w });
+      w++;
+    } else {
+      const f = fiscalOfWeek(w);
+      const pe = periodSpan(f.fy, f.period).endWeek;
+      const end = Math.min(pe, w1);
+      buckets.push({ w0: w, w1: end });
+      w = end + 1;
     }
   }
-  const points = [...buckets.entries()]
-    .sort((a, b) => a[0] - b[0])
-    .map(([day, b]) => ({ day, cost: b.units > 0 ? b.num / b.units : null, units: b.units, cases: b.cases }));
-  return { grain, points };
+  return buckets.map((b) => {
+    let spend = 0;
+    let units = 0;
+    if (it.composite) {
+      for (let w = b.w0; w <= b.w1; w++) {
+        const pc = m.poCost[i * NW + w];
+        const u = m.units[i * NW + w] + (pc > 0 ? m.lossCost[i * NW + w] / pc : 0);
+        units += u;
+        spend += u * recipeCostAt(it.composite, w);
+      }
+    } else {
+      const t = poTotals(i, b.w0 * 7, b.w1 * 7 + 6);
+      spend = t.spend;
+      units = t.units;
+    }
+    return { day: b.w0 * 7, week: b.w1, cost: periodPoCost(spend, units), hq: hqUnitCostWeek(i, b.w1), units, spend };
+  });
 }
 
-// ---------------------------------------------------------------- Recipe components
-
-export interface ComponentUnit {
-  unit: string;
-  /** $ per unit at 03/2025 (component index = 1). */
-  base: number;
-}
-
-/** Costing unit and base cost of each recipe component (03/2025 prices). */
-export const COMPONENT_UNITS: Record<string, ComponentUnit> = {
-  dough16: { unit: 'ea', base: 0.92 },
-  mozzarella: { unit: 'oz', base: 0.19 },
-  pepperoni: { unit: 'oz', base: 0.29 },
-  pizzaSauce: { unit: 'oz', base: 0.062 },
-  pizzaBox: { unit: 'ea', base: 0.92 },
-  sausage: { unit: 'oz', base: 0.22 },
-  vegTopping: { unit: 'oz', base: 0.09 },
-  chickenTopping: { unit: 'oz', base: 0.25 },
-  subRoll: { unit: 'ea', base: 0.55 },
-  deliMeat: { unit: 'oz', base: 0.32 },
-  sliceCheese: { unit: 'oz', base: 0.24 },
-  produceFill: { unit: 'oz', base: 0.06 },
-  condiments: { unit: 'oz', base: 0.05 },
-  wrapPack: { unit: 'ea', base: 0.12 },
-  protein: { unit: 'lb', base: 2.6 },
-  fryOil: { unit: 'oz', base: 0.04 },
-  starch: { unit: 'oz', base: 0.05 },
-  vegSide: { unit: 'oz', base: 0.07 },
-  sauce: { unit: 'oz', base: 0.06 },
-  container: { unit: 'ea', base: 0.35 },
-  trayMeat: { unit: 'lb', base: 4.2 },
-  trayCheese: { unit: 'lb', base: 3.8 },
-  crackers: { unit: 'oz', base: 0.14 },
-  garnish: { unit: 'oz', base: 0.08 },
-  trayLid: { unit: 'ea', base: 2.4 },
-  cakeBase: { unit: 'oz', base: 0.09 },
-  icing: { unit: 'oz', base: 0.11 },
-  filling: { unit: 'oz', base: 0.12 },
-  decoration: { unit: 'ea', base: 0.6 },
-  cakeBoard: { unit: 'ea', base: 1.1 },
-};
+// ---------------------------------------------------------------- Recipe lines
 
 export interface RecipeLine {
   key: string;
   name: string;
   qty: number;
-  unit: string;
-  /** Unit cost the recipe was costed at (Current PO Cost of the component). */
+  unit: IngredientUnit;
+  discontinued: boolean;
+  /** Ingredient cost per unit when the recipe was last costed (behind the Current PO Cost in HQ). */
   currentUnitCost: number;
-  /** Unit cost today (New PO Cost of the component). */
+  /** Ingredient cost per unit in week `w` (behind the New PO Cost). */
   newUnitCost: number;
   change: number;
-  /** $ the component adds to the PLU's cost change. */
+  /** $ the ingredient adds to the PLU's cost change. */
   contribution: number;
 }
 
-/** Recipe lines of a composite PLU: quantity × unit cost at costing time vs today. */
+/** Recipe lines of a composite PLU: quantity × ingredient cost when last costed vs in week `w`. */
 export function recipeLines(it: Item, w = LAST_COMPLETE_WEEK): RecipeLine[] {
   const c = it.composite;
   if (!c) return [];
   return c.components.map((comp) => {
-    const u = COMPONENT_UNITS[comp.key];
-    const cur = u.base * componentIndex(comp.key, c.updatedWeek);
-    const now = u.base * componentIndex(comp.key, w);
-    const qty = (comp.share * c.standardCost) / cur;
+    const cur = ingredientUnitCost(comp.key, c.updatedWeek);
+    const now = ingredientUnitCost(comp.key, w);
     return {
       key: comp.key,
       name: COMPONENTS[comp.key].name,
-      qty,
-      unit: u.unit,
+      qty: comp.qty,
+      unit: comp.unit,
+      discontinued: !!COMPONENTS[comp.key].discontinued,
       currentUnitCost: cur,
       newUnitCost: now,
       change: now / cur - 1,
-      contribution: qty * (now - cur),
+      contribution: comp.qty * (now - cur),
     };
   });
 }
 
-/** Recomputes a PLU's cost from its recipe lines, optionally overriding one component's unit cost. */
+/** Recomputes a PLU's cost from its recipe lines, optionally overriding one ingredient's unit cost. */
 export function recipeCost(lines: RecipeLine[], override?: { key: string; unitCost: number }): number {
   let cost = 0;
   for (const l of lines) cost += l.qty * (override && override.key === l.key ? override.unitCost : l.newUnitCost);
@@ -414,52 +441,81 @@ export function romaItem(): Item {
 // ---------------------------------------------------------------- Weekly unit cost by source (for margins)
 
 let poWeekly: Float32Array | null = null;
+let poFrom: Int16Array | null = null;
 let hqWeekly: Float32Array | null = null;
 
 /**
  * Weekly unit cost by source, for every item:
- * - PO (real-time): landed cost from purchase orders = vendor-weighted case cost + freight, per selling unit.
+ * - PO (real-time): the week's period-based PO cost (PO spend ÷ volume purchased). A week without purchases
+ *   carries the most recent PO cost forward, and `poCostFromWeek` says which week it came from.
  * - HQ: the default cost in HQ / Retalix in force that week (last update on or before the week, no freight).
- * UPC items use the average cost for both; composite PLUs use the recipe (today's components vs the Excel standard).
+ * UPC items use the average cost for both; composite PLUs use the recipe (that week's ingredients vs the Excel standard).
  */
 function buildWeekly(): void {
   const m = getModel();
+  const { spend, units } = dailyPo();
   const po = new Float32Array(ITEMS.length * NW);
+  const from = new Int16Array(ITEMS.length * NW);
   const hq = new Float32Array(ITEMS.length * NW);
   for (const it of ITEMS) {
     const i = it.idx;
     const sup = supplyOf(i);
     const hqWeek = weekOfDay(sup.hqUpdatedDay);
+    let last = -1;
+    let lastCost = 0;
     for (let w = 0; w < NW; w++) {
       const k = i * NW + w;
+      from[k] = w;
       if (it.costType === 'UPC') {
         po[k] = hq[k] = m.poCost[k];
         continue;
       }
       if (it.composite) {
-        po[k] = compositeCostAt(it, w);
+        po[k] = recipeCostAt(it.composite, w);
         hq[k] = w >= it.composite.updatedWeek ? it.composite.standardCost : it.composite.standardCost * 0.94;
         continue;
       }
-      let landed = 0;
-      sup.vendors.forEach((v, j) => {
-        const cc = caseCostFor(it, sup, j, w * 7 + 3);
-        landed += v.share * (cc * (1 + sup.freightRate)) / sup.casePack;
-      });
-      po[k] = landed;
+      let sp = 0;
+      let u = 0;
+      for (let day = w * 7; day <= Math.min(w * 7 + 6, ND - 1); day++) {
+        sp += spend[i * ND + day];
+        u += units[i * ND + day];
+      }
+      if (u > 0) {
+        last = w;
+        lastCost = sp / u;
+        po[k] = lastCost;
+      } else if (last >= 0) {
+        po[k] = lastCost;
+        from[k] = last;
+      } else {
+        // Before the first purchase on record: the vendor-weighted landed cost for that week.
+        let landed = 0;
+        sup.vendors.forEach((v, j) => {
+          landed += (v.share * (caseCostFor(it, sup, j, w * 7 + 3) * (1 + sup.freightRate))) / sup.casePack;
+        });
+        po[k] = landed;
+      }
       // HQ is refreshed about once a year: the value in force is the last update on or before this week.
-      let u = hqWeek;
-      while (u > w) u -= 52;
-      hq[k] = u === hqWeek ? sup.hqCost : sup.hqCost * Math.pow(0.97, (hqWeek - u) / 52);
+      let hu = hqWeek;
+      while (hu > w) hu -= 52;
+      hq[k] = hu === hqWeek ? sup.hqCost : sup.hqCost * Math.pow(0.97, (hqWeek - hu) / 52);
     }
   }
   poWeekly = po;
+  poFrom = from;
   hqWeekly = hq;
 }
 
 export function poUnitCostWeek(i: number, w: number): number {
   if (!poWeekly) buildWeekly();
   return poWeekly![i * NW + Math.max(0, Math.min(NW - 1, w))];
+}
+
+/** Week the PO cost used for week `w` comes from (equal to `w` unless nothing was bought that week). */
+export function poCostFromWeek(i: number, w: number): number {
+  if (!poFrom) buildWeekly();
+  return poFrom![i * NW + Math.max(0, Math.min(NW - 1, w))];
 }
 
 export function hqUnitCostWeek(i: number, w: number): number {

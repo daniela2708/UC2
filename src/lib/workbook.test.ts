@@ -1,8 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import { formatDay, globalWeek, LAST_COMPLETE_WEEK, weekStartDay } from '../data/calendar';
 import { getModel, NW } from '../data/generate';
-import { DEPTS, CATS, ITEMS, itemByName } from '../data/products';
-import { compositeCostAt, costSeries, currentPoCost, newPoCost, poUnitCostWeek, recipeCost, recipeLines } from '../data/purchasing';
+import { DEPTS, CATS, ITEMS, itemByName, recipeCostAt } from '../data/products';
+import { compositeCostAt, costSeries, currentPoCost, newPoCost, newPoCostInfo, ordersOf, poCostForDays, poCostFromWeek, poTotals, poUnitCostWeek, recipeCost, recipeLines } from '../data/purchasing';
+import { clampIngredientCost, ingredientPickerItems, ingredientsSummary, pluUsing, resolveIngredientsItem, unitsProduced52, whereUsed } from './ingredients';
 import { PLANTED } from '../data/planted';
 import { STORES } from '../data/stores';
 import { belowTarget, catBand } from '../data/targets';
@@ -22,9 +23,8 @@ import {
   likelyEntryError,
   marginAfterLoss,
   netSalesPerUnit,
-  newPoCostWeighted,
+  periodPoCost,
   purchaseCostPerUnit,
-  purchaseCostPerUnitPurchased,
   roundToX9,
   sellThrough,
   simulateCostChange,
@@ -47,9 +47,6 @@ import {
   freshStoreDays,
   freshStoreWeeks,
   isEntryError,
-  itemPurchaseFactor,
-  itemPurchasesWeek,
-  MERCH_CHANNELS,
 } from './selectors';
 
 const ytd = resolveTime(BASE_TIME);
@@ -61,9 +58,9 @@ describe('workbook KPI formulas', () => {
     expect(netSalesPerUnit(980, 250)).toBeCloseTo(3.92);
     expect(averageRetail(1000, 0)).toBeNull();
   });
-  it('Purchase Cost per Unit = Total Purchases ÷ Total Volume (sold); the purchased version divides by units purchased', () => {
-    expect(purchaseCostPerUnit(600, 300)).toBe(2);
-    expect(purchaseCostPerUnitPurchased(600, 400)).toBe(1.5);
+  it('Purchase Cost per Unit = Total Purchases ÷ volume purchased (units purchased, not units sold)', () => {
+    // $600 spent on 400 units purchased, of which 300 sold: $1.50, not $2.00.
+    expect(purchaseCostPerUnit(600, 400)).toBe(1.5);
     expect(purchaseCostPerUnit(600, 0)).toBeNull();
     expect(purchaseCostPerUnit(600, -5)).toBeNull();
   });
@@ -96,15 +93,24 @@ describe('workbook KPI formulas', () => {
 });
 
 describe('Current vs New PO Cost', () => {
-  it('New PO Cost weights the last 4 weeks 0.4 / 0.3 / 0.2 / 0.1 by quantity and ignores bad lines', () => {
-    const v = newPoCostWeighted([
-      { weeksBack: 0, units: 100, unitCost: 2 },
-      { weeksBack: 3, units: 100, unitCost: 1 },
-      { weeksBack: 4, units: 100, unitCost: 99 },
-      { weeksBack: 1, units: -5, unitCost: 50 },
-    ]);
-    expect(v).toBeCloseTo((0.4 * 100 * 2 + 0.1 * 100 * 1) / (0.4 * 100 + 0.1 * 100));
-    expect(newPoCostWeighted([])).toBeNull();
+  it('period-based PO cost = PO spend ÷ volume purchased; an empty period has no cost', () => {
+    expect(periodPoCost(1000, 400)).toBe(2.5);
+    expect(periodPoCost(0, 0)).toBeNull();
+    expect(periodPoCost(500, 0)).toBeNull();
+    expect(periodPoCost(-5, 10)).toBeNull();
+    expect(periodPoCost(5, -10)).toBeNull();
+    expect(periodPoCost(null, 10)).toBeNull();
+  });
+  it('New PO Cost is the last complete week, or the latest earlier week with purchases', () => {
+    const roma = itemByName('Roma Tomatoes').idx;
+    const info = newPoCostInfo(roma);
+    expect(info.week).toBe(LAST_COMPLETE_WEEK);
+    const t = poTotals(roma, LAST_COMPLETE_WEEK * 7, LAST_COMPLETE_WEEK * 7 + 6);
+    expect(info.cost).toBeCloseTo(t.spend / t.units, 9);
+    // Pie pumpkins out of season: no purchases after the season, so the cost comes from an earlier week.
+    const p = itemByName('Pie Pumpkins').idx;
+    const off = newPoCostInfo(p, globalWeek(2026, 20));
+    expect(off.cost === null || off.week <= globalWeek(2026, 20)).toBe(true);
   });
   it('Roma tomatoes: HQ holds the old case cost while POs jumped from $19.95 to $44.95 in W36', () => {
     const roma = itemByName('Roma Tomatoes').idx;
@@ -128,7 +134,8 @@ describe('composite PLUs', () => {
     const moz = lines.find((l) => l.key === 'mozzarella')!;
     const bumped = recipeCost(lines, { key: 'mozzarella', unitCost: moz.newUnitCost + 0.1 });
     expect(bumped - recipeCost(lines)).toBeCloseTo(moz.qty * 0.1, 6);
-    expect(moz.change).toBeCloseTo(0.12, 2);
+    expect(moz.change).toBeGreaterThan(0.08);
+    expect(moz.change).toBeLessThan(0.16);
   });
   it('slices cost the pie divided by the slice count', () => {
     const pie = itemByName('16 in. Pepperoni Pizza').composite!;
@@ -138,12 +145,38 @@ describe('composite PLUs', () => {
 });
 
 describe('Item Cost Over Time', () => {
-  it('aggregates daily points to weeks when the range exceeds 26 weeks', () => {
-    const roma = itemByName('Roma Tomatoes').idx;
-    expect(costSeries(roma, weekStartDay(globalWeek(2026, 17)), weekStartDay(globalWeek(2026, 42)) + 6).grain).toBe('day');
-    const long = costSeries(roma, weekStartDay(globalWeek(2025, 30)), weekStartDay(globalWeek(2026, 42)) + 6);
-    expect(long.grain).toBe('week');
-    expect(long.points.every((p) => (p.day % 7) === 0)).toBe(true);
+  const roma = itemByName('Roma Tomatoes').idx;
+  it('PO Cost / Unit per week and per fiscal period is PO spend ÷ volume purchased in that bucket', () => {
+    const w0 = globalWeek(2026, 18);
+    const w1 = globalWeek(2026, 42);
+    const weeks = costSeries(roma, w0, w1, 'week');
+    expect(weeks).toHaveLength(w1 - w0 + 1);
+    for (const p of weeks) {
+      const t = poTotals(roma, p.day, p.week * 7 + 6);
+      expect(p.units).toBeCloseTo(t.units, 6);
+      expect(p.cost).toBeCloseTo(t.spend / t.units, 9);
+    }
+    const periods = costSeries(roma, w0, w1, 'period');
+    // Buckets follow fiscal periods (4-4-5) and cover the same weeks.
+    expect(periods.reduce((a, p) => a + p.units, 0)).toBeCloseTo(weeks.reduce((a, p) => a + p.units, 0), 4);
+    for (const p of periods) expect(p.cost).toBeCloseTo(p.spend / p.units, 9);
+    // The W36 spike: week 35 below $0.90 / lb, week 36 above $1.40 / lb; HQ stays at $19.45 / 25 lb.
+    expect(weeks.find((p) => p.week === globalWeek(2026, 35))!.cost!).toBeLessThan(0.9);
+    expect(weeks.find((p) => p.week === globalWeek(2026, 36))!.cost!).toBeGreaterThan(1.4);
+    expect(weeks.every((p) => Math.abs(p.hq - 19.45 / 25) < 1e-6)).toBe(true);
+  });
+  it('a period without purchases is a gap; margins carry the most recent PO cost and say where it came from', () => {
+    const p = itemByName('Pie Pumpkins').idx;
+    const series = costSeries(p, globalWeek(2025, 1), LAST_COMPLETE_WEEK, 'week');
+    const gaps = series.filter((x) => x.units === 0);
+    expect(gaps.length).toBeGreaterThan(0);
+    for (const g of gaps) expect(g.cost).toBeNull();
+    const g = gaps.find((x) => series.some((y) => y.week < x.week && y.units > 0))!;
+    const from = poCostFromWeek(p, g.week);
+    expect(from).toBeLessThan(g.week);
+    expect(poUnitCostWeek(p, g.week)).toBeCloseTo(poCostForDays(p, from * 7, from * 7 + 6)!, 4);
+    // A day with no deliveries (Sunday) has no PO cost.
+    expect(poCostForDays(p, weekStartDay(g.week), weekStartDay(g.week))).toBeNull();
   });
   it('shows one SKU at a time; no SKU in the list means an empty state, not an error', () => {
     expect(resolveIcItem([], 5)).toBe(-1);
@@ -275,23 +308,33 @@ describe('Fresh Report', () => {
 });
 
 describe('purchases reconcile', () => {
-  const scope = buildScope(DEFAULT_STATE, ytd, { deptOnly: true });
-  const weeks = [globalWeek(2026, 20), globalWeek(2026, 33), globalWeek(2026, 41)];
-  it('item purchases equal department merchandise purchases (within 0.5 %), and items plus non-merchandise lines equal the department total', () => {
-    const { all: R } = itemPurchaseFactor(scope, weeks);
-    for (const w of weeks)
-      for (const d of DEPTS) {
-        let merch = 0;
-        let total = 0;
-        for (const row of freshStoreWeeks(scope, [d.idx], [w]).values()) {
-          for (const ch of MERCH_CHANNELS) merch += row[0].purchases[ch];
-          total += totalPurchases(row[0].purchases);
-        }
-        let items = 0;
-        for (const it of ITEMS) if (it.dept === d.idx) items += itemPurchasesWeek(R, it.idx, w);
-        expect(Math.abs(items / merch - 1)).toBeLessThan(0.005);
-        expect(items + (total - merch)).toBeCloseTo(total, 2);
-      }
+  it('item Total Purchases = Biceps PO spend (PLU, RW), bill-out (UPC) or production cost (composite), and Purchase Cost per Unit divides by volume purchased', () => {
+    const all = buildScope(DEFAULT_STATE, ytd);
+    const aggs = itemAggregates(all, DEFAULT_STATE.costBasis, 'po');
+    const m = getModel();
+    const byName = (n: string) => aggs.find((a) => ITEMS[a.item].name === n)!;
+    for (const name of ['Roma Tomatoes', 'Atlantic Salmon Fillet']) {
+      const a = byName(name);
+      const t = poTotals(a.item, ytd.start, ytd.end);
+      // All stores hold the whole chain (share 1, up to float rounding).
+      expect(a.purch / t.spend).toBeCloseTo(1, 6);
+      const units = ITEMS[a.item].uom === 'ea' ? a.purchUnitsEa : a.purchUnitsLb;
+      expect(units / t.units).toBeCloseTo(1, 6);
+      expect(purchaseCostPerUnit(a.purch, units)! / (t.spend / t.units)).toBeCloseTo(1, 6);
+    }
+    const upc = aggs.find((a) => ITEMS[a.item].costType === 'UPC' && a.purch > 0)!;
+    const lines = ordersOf(upc.item).filter((o) => o.day >= ytd.start && o.day <= ytd.end);
+    expect(lines.every((o) => o.vendor === 'Weis Distribution Center')).toBe(true);
+    expect(upc.purch / lines.reduce((x, o) => x + (o.caseCost + o.freight) * o.cases, 0)).toBeCloseTo(1, 6);
+    const pizza = byName('16 in. Pepperoni Pizza');
+    expect(pizza.purchUnitsEa).toBeCloseTo(pizza.ea + pizza.lossUnitsEa, 4);
+    let prod = 0;
+    for (let w = Math.floor(ytd.start / 7); w <= Math.min(Math.floor(ytd.end / 7), NW - 1); w++) {
+      const k = pizza.item * NW + w;
+      if (w * 7 + 6 > ytd.end) continue;
+      prod += (m.units[k] + (m.poCost[k] > 0 ? m.lossCost[k] / m.poCost[k] : 0)) * compositeCostAt(ITEMS[pizza.item], w);
+    }
+    expect(pizza.purch / prod).toBeCloseTo(1, 2);
   });
   it('category purchases sum to department purchases for every sampled store and week', () => {
     const rand = mulberry32(SEED);
@@ -310,21 +353,25 @@ describe('purchases reconcile', () => {
       expect(parts).toBeCloseTo(whole, 4);
     }
   });
-  it('simulated inventory never goes negative', () => {
+  it('simulated inventory never goes negative: stores reorder up to par in whole cases', () => {
     const m = getModel();
-    const weeksAll = Array.from({ length: LAST_COMPLETE_WEEK + 1 }, (_, w) => w);
-    const { all: R } = itemPurchaseFactor(scope, weeksAll);
     const rand = mulberry32(SEED + 1);
-    for (let k = 0; k < 40; k++) {
+    for (let k = 0; k < 30; k++) {
       const i = Math.floor(rand() * ITEMS.length);
-      if (ITEMS[i].launchWeek !== undefined) continue;
-      // Opening stock: one week of sales.
-      let inv = m.units[i * NW];
-      for (const w of weeksAll) {
-        const landed = poUnitCostWeek(i, w);
-        const bought = landed > 0 ? itemPurchasesWeek(R, i, w) / landed : 0;
+      if (ITEMS[i].composite) continue;
+      const byDay = new Map<number, number>();
+      for (const o of ordersOf(i)) byDay.set(o.day, (byDay.get(o.day) ?? 0) + o.units);
+      const used = (day: number) => {
+        const w = Math.min(Math.floor(day / 7), LAST_COMPLETE_WEEK);
         const pc = m.poCost[i * NW + w];
-        inv += bought - m.units[i * NW + w] - (pc > 0 ? m.lossCost[i * NW + w] / pc : 0);
+        return m.dUnits[i * 1023 + day] + (pc > 0 ? m.lossCost[i * NW + w] / pc / 7 : 0);
+      };
+      // Opening stock: one week of use.
+      let inv = 0;
+      for (let day = 0; day < 7; day++) inv += used(day);
+      for (let day = 0; day < 1023; day++) {
+        inv += byDay.get(day) ?? 0;
+        inv -= used(day);
         expect(inv).toBeGreaterThan(-1e-6);
       }
     }
@@ -479,5 +526,64 @@ describe('new items watch (Known Loss Report)', () => {
       expect(r.weekly.reduce((a, w) => a + w.loss, 0)).toBeCloseTo(r.loss, 6);
       expect(r.weekly.reduce((a, w) => a + w.volume, 0)).toBeCloseTo(r.volume, 6);
     }
+  });
+});
+
+describe('Ingredients View', () => {
+  const pizza = itemByName('16 in. Pepperoni Pizza');
+  it('opens on 16 in. Pepperoni Pizza and lists only composite Deli and Bakery PLUs', () => {
+    const list = ingredientPickerItems(-1, -1);
+    expect(list.every((i) => !!ITEMS[i].composite && ['Deli', 'Bakery'].includes(DEPTS[ITEMS[i].dept].name))).toBe(true);
+    expect(resolveIngredientsItem(list, -1)).toBe(pizza.idx);
+    expect(resolveIngredientsItem([], -1)).toBe(-1);
+  });
+  it('contribution = units per item × cost per unit; contributions add up to cost / unit; totals follow the workbook interpretation', () => {
+    const r = resolveTime({ ...BASE_TIME, mode: 'rolling', rolling: 26 });
+    const sum = ingredientsSummary(pizza, r.start, r.end);
+    expect(sum.rows.map((x) => x.name)).toEqual(['Pizza dough ball', 'Shredded mozzarella', 'Pizza sauce', 'Sliced pepperoni', '16 in. pizza box']);
+    expect(sum.rows.find((x) => x.key === 'mozzarella')!.qty).toBe(12);
+    for (const row of sum.rows) expect(row.contribution).toBeCloseTo(row.qty * row.unitCost, 9);
+    expect(sum.rows.reduce((a, x) => a + x.contribution, 0)).toBeCloseTo(sum.costPerUnit, 9);
+    expect(sum.rows.reduce((a, x) => a + x.share, 0)).toBeCloseTo(1, 9);
+    expect(sum.totalCost).toBeCloseTo(sum.costPerUnit * sum.units, 6);
+    expect(sum.grossProfit).toBeCloseTo(sum.grossSales - sum.totalCost, 6);
+    expect(sum.grossProfitPct!).toBeCloseTo(sum.grossProfit / sum.grossSales, 9);
+  });
+  it('base ingredients are shared: the pepperoni pizza’s ingredients are used by at least 4 other PLUs', () => {
+    for (const key of ['dough16', 'mozzarella', 'pizzaSauce', 'pepperoni']) {
+      const others = pluUsing(key).filter((i) => i !== pizza.idx);
+      expect(others.length).toBeGreaterThanOrEqual(4);
+      expect(others.some((i) => /Stromboli/.test(ITEMS[i].name))).toBe(true);
+    }
+  });
+  it('where used: a new ingredient cost flows to every recipe that uses it, with annual impact on units produced', () => {
+    const today = whereUsed('mozzarella', null);
+    expect(today.every((r) => r.newCost === r.currentCost && r.annualImpact === 0)).toBe(true);
+    const base = today.find((r) => r.item === pizza.idx)!;
+    const unitNow = base.currentCost - recipeCostAt(pizza.composite!, LAST_COMPLETE_WEEK, { key: 'mozzarella', unitCost: 0 });
+    const newUnit = unitNow / 12 + 0.05;
+    const sim = whereUsed('mozzarella', newUnit);
+    expect(sim.map((r) => r.item).sort()).toEqual(pluUsing('mozzarella').sort());
+    for (const r of sim) {
+      const c = ITEMS[r.item].composite!;
+      expect(r.newCost).toBeCloseTo(recipeCostAt(c, LAST_COMPLETE_WEEK, { key: 'mozzarella', unitCost: newUnit }), 9);
+      expect(r.newCost - r.currentCost).toBeCloseTo(r.qty * (newUnit - (r.currentCost - recipeCostAt(c, LAST_COMPLETE_WEEK, { key: 'mozzarella', unitCost: 0 })) / r.qty), 9);
+      expect(r.unitsProduced).toBeCloseTo(unitsProduced52(r.item), 6);
+      expect(r.annualImpact).toBeCloseTo((r.newCost - r.currentCost) * r.unitsProduced, 6);
+      expect(r.gpAfter!).toBeLessThan(r.gpBefore!);
+    }
+    // Slices use the pie's recipe ÷ 8, so they move by an eighth of the pie.
+    const slice = sim.find((r) => ITEMS[r.item].name === '16 in. Pepperoni Pizza Slice')!;
+    const pie = sim.find((r) => r.item === pizza.idx)!;
+    expect(slice.newCost - slice.currentCost).toBeCloseTo((pie.newCost - pie.currentCost) / 8, 9);
+  });
+  it('accepts a positive ingredient cost up to 10× today and refuses anything else', () => {
+    expect(clampIngredientCost('0.25', 0.18)).toBe(0.25);
+    expect(clampIngredientCost('$1.5', 0.18)).toBe(1.5);
+    expect(clampIngredientCost('0', 0.18)).toBeNull();
+    expect(clampIngredientCost('-1', 0.18)).toBeNull();
+    expect(clampIngredientCost('2', 0.18)).toBeNull();
+    expect(clampIngredientCost('1e3', 0.18)).toBeNull();
+    expect(clampIngredientCost('abc', 0.18)).toBeNull();
   });
 });

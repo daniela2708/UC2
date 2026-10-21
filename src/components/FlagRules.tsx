@@ -2,9 +2,9 @@ import { SlidersHorizontal } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import { useFilters } from '../lib/filterStore';
 import { money } from '../lib/format';
-import { clampLossRule, DEFAULT_LOSS_RULE, ENTRY_ERROR_MULTIPLE, LOSS_RULE_LIMITS } from '../lib/kpis';
+import { clampLossRule, DEFAULT_LOSS_RULE, ENTRY_ERROR_MULTIPLE, FLAG_BASIS_NOTE, LOSS_RULE_LIMITS } from '../lib/kpis';
 import { EXTREME_ENTRY_DOLLARS } from '../data/planted';
-import { Field, StatusChip } from './ui';
+import { Field, InfoTip, StatusChip } from './ui';
 
 /**
  * High Loss Flag rules. The workbook flag is weekly loss above $1,000; the reason labels and the
@@ -26,6 +26,9 @@ export function FlagRulesForm() {
     <div className="flag-rules">
       <p className="rule-line">
         <b>High Loss Flag</b> (workbook): known loss higher than <b>{money(state.rule.dollars)}</b> for an item in a store in a given week.
+      </p>
+      <p className="rule-line">
+        Threshold basis: <b>at cost</b>, assumed <StatusChip status="Pending validation" /> <InfoTip text={FLAG_BASIS_NOTE} />
       </p>
       <p className="rule-line">
         Reason labels <StatusChip status="Proposed" />: <span className="chip error">Likely entry error</span> loss units above {ENTRY_ERROR_MULTIPLE}× the

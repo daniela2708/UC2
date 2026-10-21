@@ -55,7 +55,10 @@ export function HierTable({
   exportTitle,
   maxHeight = 640,
   tableId,
+  presets = [],
 }: {
+  /** Named column sets offered in the column chooser (e.g. "Loss focus"). */
+  presets?: { label: string; keys: string[] }[];
   /** Enables the column chooser; the choice is stored in the URL under this id. */
   tableId?: string;
   /** Title of the downloaded sheet; when set, an Excel button exports every row (expanded or not). */
@@ -189,6 +192,7 @@ export function HierTable({
         {tableId && (
           <ColumnChooser
             columns={columns}
+            presets={presets}
             visible={visibleKeys}
             onChange={(keys) => setVisible(keys)}
             onReset={() => setVisible(null)}
@@ -248,11 +252,13 @@ const GROUP_ORDER: ColGroup[] = ['Sales', 'Cost', 'Margin', 'Loss', 'Sell-throug
 /** Column chooser popover: checkboxes by group, plus Reset to default. */
 function ColumnChooser({
   columns,
+  presets,
   visible,
   onChange,
   onReset,
 }: {
   columns: HierCol[];
+  presets: { label: string; keys: string[] }[];
   visible: Set<string>;
   onChange: (keys: string[]) => void;
   onReset: () => void;
@@ -283,6 +289,28 @@ function ColumnChooser({
       </button>
       {open && (
         <div className="popover col-chooser" role="dialog" aria-label="Choose columns">
+          {presets.length > 0 && (
+            <div className="col-presets">
+              <span>Presets</span>
+              {presets.map((p) => {
+                const on = p.keys.length === visible.size && p.keys.every((k) => visible.has(k));
+                return (
+                  <button
+                    key={p.label}
+                    type="button"
+                    className={`chip-btn${on ? ' is-on' : ''}`}
+                    aria-pressed={on}
+                    onClick={() => {
+                      onChange(columns.filter((c) => p.keys.includes(c.key)).map((c) => c.key));
+                      setOpen(false);
+                    }}
+                  >
+                    {p.label}
+                  </button>
+                );
+              })}
+            </div>
+          )}
           <div className="popover-body">
             {groups.map(({ g, cols }) => (
               <fieldset key={g} className="col-group">

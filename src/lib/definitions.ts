@@ -26,6 +26,7 @@ const CI: ViewName = 'Category-Item Summary';
 const IC: ViewName = 'Item Cost Over Time';
 const FR: ViewName = 'Fresh Report';
 const KLR: ViewName = 'Known Loss Report';
+const IV: ViewName = 'Ingredients View';
 
 export const KPI_DEFINITIONS: KpiDefinition[] = [
   {
@@ -94,53 +95,45 @@ export const KPI_DEFINITIONS: KpiDefinition[] = [
     name: 'Total Purchases',
     unit: '$',
     definition:
-      'Total purchase cost after trade rates. In the Fresh Report: Whse + DSD + Packaging + Reclaim in transit + Transfers + In transit + Donations + WC credit + Scan credit. At category and item level, merchandise channels (Whse, DSD, Reclaim, Transfers, In transit) are allocated by each one’s cost of goods plus loss; packaging, donations and credits stay at department and category level. Cases shipped through outside vendors (C&S) are not in the source systems.',
-    formula: 'Σ purchase channels; items: merchandise × (item COGS + loss) ÷ (department COGS + loss)',
-    source: FRESH,
-    reconciliation: 'Category and item totals tie to the department figures to the cent; the department ties to the Fresh Report per store and week.',
+      'PO cost spent, from PO cost and volume in Biceps (landed: case cost + freight). Sources by item: Biceps PO for PLU and random-weight items; warehouse bill-out for UPC items (shipments to stores, used as a proxy for purchases); production cost (recipe) for composite PLUs = units produced (sold + known loss) × recipe cost, unknown loss not included. Store filters take the stores’ share of the category. The Fresh Report keeps its own store-level purchases (Whse, DSD, Packaging, Reclaim, Transfers, In transit, Donations, WC credit, Scan credit), labelled "Fresh Report purchases".',
+    formula: 'Σ PO lines (cases × (case cost + freight)) in the period; Fresh Report: Σ purchase channels',
+    source: `${BICEPS} · Warehouse bill-out · ${FRESH}`,
+    reconciliation: 'Item PO spend ties to Biceps PO lines; the Fresh Report ties to Accounting per store and week. The two are different measures and do not add up to each other.',
     status: 'Draft',
     priority: 'Must',
-    views: [CI, FR],
-    note: 'Item and category allocation is Proposed.',
+    views: [CI, IC, FR],
+    note: 'Aggregate rows note when sources are mixed.',
   },
+
   {
     id: 'purchase-cost-unit',
     name: 'Purchase Cost per Unit',
     unit: '$',
-    definition: 'Purchases divided by the volume sold, as the workbook defines it. Wizeline asked whether volume here should be units purchased rather than units sold.',
-    formula: 'SUM(Total Purchases) ÷ SUM(Volume)',
+    definition: 'Total Purchases divided by the volume purchased from PO data (units purchased, not units sold). Composite PLUs: production cost ÷ units produced. Shown within one unit of measure.',
+    formula: 'SUM(Total Purchases) ÷ SUM(volume purchased)',
     source: BICEPS,
-    reconciliation: 'Pending the open question on volume.',
-    status: 'Pending validation',
+    reconciliation: 'Matches Biceps PO spend ÷ PO quantity for the same items and period.',
+    status: 'Draft',
     priority: 'Must',
-    views: [CI],
+    views: [CI, IC],
   },
-  {
-    id: 'purchase-cost-unit-purchased',
-    name: 'Purchase Cost per Unit Purchased',
-    unit: '$',
-    definition: 'Alternative: purchases divided by units purchased (sold + loss + inventory change). Hidden column.',
-    formula: 'SUM(Total Purchases) ÷ SUM(units purchased)',
-    source: BICEPS,
-    reconciliation: 'Matches warehouse bill-out unit cost for warehouse-supplied items.',
-    status: 'Proposed',
-    priority: 'Proposed',
-    views: [CI],
-  },
+
+
   {
     id: 'po-cost',
     name: 'PO Cost / Unit',
     unit: '$',
     definition:
-      'Real-time cost per unit from purchase orders, freight included. "Current PO Cost" is the cost held in HQ / Retalix today; "New PO Cost" is the latest real cost: the last 4 weeks of POs weighted 0.4 / 0.3 / 0.2 / 0.1 (newest first) × quantity. Real-time cost comes from purchase orders in the ordering system (Biceps) and may change after invoice reconciliation.',
-    formula: 'Σ (landed PO unit cost × units) ÷ Σ units; New PO Cost = Σ wₖ·qty·cost ÷ Σ wₖ·qty',
+      'Period-based weighted average (BCG proposal): total PO spend in the period ÷ volume purchased in the period, freight included. A period without purchases has no PO cost: a gap in charts and "—" in tables; Gross Margin and Total Net Cost then use the most recent PO cost, marked "cost from W38". "Current PO Cost" is the cost held in HQ / Retalix today; "New PO Cost" is the PO cost of the last complete week (or the latest earlier week with purchases, marked "as of W41"). The same method feeds the PO cost source switch. Real-time cost comes from purchase orders in the ordering system (Biceps) and may change after invoice reconciliation.',
+    formula: 'Σ PO spend in the period ÷ Σ volume purchased in the period (null when no volume)',
     source: `${BICEPS} · Retalix (HQ cost)`,
     reconciliation: 'PO lines tie to Biceps; HQ cost ties to Retalix.',
-    status: 'Pending validation',
+    status: 'Proposed',
     priority: 'Must',
-    views: [CI, IC],
-    note: 'Cost logic changes only for PLU and random-weight items; UPC items keep the HQ average cost, which already works.',
+    views: [CI, IC, 'Cost Watch'],
+    note: 'Replaces the earlier 4-week recency weighting. UPC items keep the HQ average cost; composite PLUs use the recipe cost.',
   },
+
   {
     id: 'total-net-cost',
     name: 'Total Net Cost',
@@ -254,14 +247,16 @@ export const KPI_DEFINITIONS: KpiDefinition[] = [
     name: 'High Loss Flag',
     unit: 'T / F',
     definition:
-      'Loss higher than $1,000 in a given week, for an item in a store. Proposed refinement, shown only as a secondary label: "Likely entry error" (loss units above 20× the item-store typical weekly loss units, or above the $100,000 plausibility cap) or "High loss to review". An optional 26-week rule (loss also more than 100 % above the item-store 26-week average) is available in the Flag rules popover, off by default.',
-    formula: 'Weekly known loss $ (item × store × week) > 1,000. Exactly $1,000.00 is not flagged.',
+      'Loss higher than $1,000 in a given week, for an item in a store. Threshold basis: at cost, assumed, Pending validation (open question 3): nobody has confirmed whether the current $1,000 rule is at cost or at retail, and the Recon Map points to KL1011 "Known Loss Retail $". Proposed refinement, shown only as a secondary label: "Likely entry error" (loss units above 20× the item-store typical weekly loss units, or above the $100,000 plausibility cap) or "High loss to review". An optional 26-week rule (loss also more than 100 % above the item-store 26-week average) is available in the Flag rules popover, off by default.',
+    formula: 'Weekly known loss $ at cost (item × store × week) > 1,000. Exactly $1,000.00 is not flagged.',
     source: KL,
     reconciliation: 'Category managers report likely entry errors to IT ("Report to IT", "Export list for IT") so they are removed from known loss.',
-    status: 'Draft',
+    status: 'Pending validation',
     priority: 'Must',
-    views: [CI, KLR]
+    views: [CI, KLR],
+    note: 'Threshold basis: at cost, assumed, Pending validation. See open question 3.',
   },
+
   {
     id: 'ly',
     name: 'Last Year Gross Sales, Last Year Net Sales',
@@ -319,8 +314,8 @@ KPI_DEFINITIONS.push(
     id: 'cost-source',
     name: 'Cost source (PO vs HQ)',
     unit: 'switch',
-    definition: 'PLU and random-weight items use the real-time PO cost by default, freight included; switching to HQ shows margins on the cost held in HQ / Retalix. UPC items always use the HQ average cost. The switch shows how many points the margin moves.',
-    formula: 'Net cost from PO landed cost or HQ default cost',
+    definition: 'PLU and random-weight items use the real-time PO cost by default: each week’s period-based PO cost (PO spend ÷ volume purchased, freight included), or the most recent one when nothing was bought that week. Switching to HQ shows margins on the cost held in HQ / Retalix. UPC items always use the HQ average cost. The switch shows how many points the margin moves.',
+    formula: 'Net cost from the weekly period-based PO cost or the HQ default cost',
     source: `${BICEPS} · Retalix`,
     reconciliation: 'Pending Biceps access (open question 2).',
     status: 'Pending validation',
@@ -376,6 +371,44 @@ KPI_DEFINITIONS.push(
     priority: 'Proposed',
     views: [CI, IC, 'Cost Watch'],
   },
+  {
+    id: 'ingredients-gp',
+    name: 'Ingredients View totals (Gross Profit $ and %)',
+    unit: '$, %',
+    definition:
+      'Totals for one PLU over the period: Total units = units sold; Cost / unit = Σ ingredient contributions (units per item × cost per unit); Total unit cost = recipe cost × units sold, week by week; Gross Profit ($) = Gross Sales − (recipe cost × units sold); Gross Profit (%) = Gross Profit ÷ Gross Sales, consistent with Gross Margin Rate. Retail price is shown as a reference only.',
+    formula: 'GP $ = Gross Sales − Σ (recipe cost × units sold); GP % = GP $ ÷ Gross Sales',
+    source: 'Pizza Ingredients.xlsx · Scan Data',
+    reconciliation: 'Matches the Pizza Ingredients workbook for the same recipe and costs.',
+    status: 'Pending validation',
+    priority: 'Should',
+    views: [IV],
+  },
+  {
+    id: 'ingredient-contribution',
+    name: 'Ingredient contribution',
+    unit: '$',
+    definition: 'What one ingredient adds to a PLU’s unit cost: units per item (e.g. 6 oz) × the ingredient’s cost per unit of costing. Contributions add up to the recipe cost per unit. Ingredient costs come from ingredient purchase orders.',
+    formula: 'units per item × cost per unit',
+    source: 'Pizza Ingredients.xlsx · ingredient POs',
+    reconciliation: 'Σ contributions = recipe cost per unit.',
+    status: 'Draft',
+    priority: 'Should',
+    views: [IV],
+  },
+  {
+    id: 'where-used',
+    name: 'Where used',
+    unit: 'what-if',
+    definition:
+      'Every PLU whose recipe uses an ingredient (e.g. pizza dough ball, shredded mozzarella, pizza sauce), with current cost, new cost, Gross Profit % before and after, and annual impact. A new ingredient cost flows through every recipe that uses it. Read-only: nothing is saved or sent to HQ.',
+    formula: 'Annual impact = (new PLU cost − current PLU cost) × units produced (units sold + known loss units) over the trailing 52 weeks',
+    source: 'Simulation only',
+    reconciliation: 'Recipe costs match the Ingredients View for the same week.',
+    status: 'Proposed',
+    priority: 'Proposed',
+    views: [IV],
+  },
 );
 
 export interface OpenQuestion {
@@ -388,7 +421,11 @@ export interface OpenQuestion {
 export const OPEN_QUESTIONS: OpenQuestion[] = [
   { id: 'q1', question: 'Source for Gross Sales in the Fresh Report: 1048 or Category Analyzer?', context: 'Affects Total Gross Sales and Gross Margin Rate in the Fresh Report.' },
   { id: 'q2', question: 'Access to PO cost in Biceps, and how it links to Retalix.', context: 'Needed for PO Cost / Unit, New PO Cost and the cost source switch.' },
-  { id: 'q3', question: 'Threshold to flag high loss, for both data entry errors and high real loss.', context: 'The High Loss Flag rules are editable and marked Pending validation.' },
+  {
+    id: 'q3',
+    question: 'Threshold to flag high loss, for both data entry errors and high real loss.',
+    context: 'The prototype uses $1,000 per item, store and week, at cost (assumed; the Recon Map points to KL1011 "Known Loss Retail $"). Rules are editable and Pending validation.',
+  },
   {
     id: 'q4',
     question: 'Tracking of cases sent through outside vendors (DSD and C&S). WMBI receives all receiving types and combines them.',

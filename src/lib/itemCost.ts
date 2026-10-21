@@ -1,6 +1,6 @@
 /** Item Cost Over Time: which items the SKU picker offers, and which one is shown. Pure helpers. */
 import { ITEMS } from '../data/products';
-import { currentPoCost, newPoCost } from '../data/purchasing';
+import { currentPoCost, newPoCost, romaItem } from '../data/purchasing';
 import { itemIndices } from './filters';
 
 /** Items the picker offers: the business filters only narrow this list. */
@@ -10,11 +10,16 @@ export function pickerItems(dept: number, cat: number, sub: number, costType: st
 
 const defaultCache = new Map<string, number>();
 
-/** Default item: the largest gap between New PO Cost and the cost in HQ over the last 4 weeks (-1 for an empty list). */
+/** Default item: Roma tomatoes when in the list (the demo story), else the largest gap between New PO Cost and the cost in HQ (-1 for an empty list). */
 export function defaultItem(list: number[]): number {
   const key = list.join('.');
   const hit = defaultCache.get(key);
   if (hit !== undefined) return hit;
+  const roma = romaItem().idx;
+  if (list.includes(roma)) {
+    defaultCache.set(key, roma);
+    return roma;
+  }
   let best = list[0] ?? -1;
   let bestGap = -1;
   for (const i of list) {

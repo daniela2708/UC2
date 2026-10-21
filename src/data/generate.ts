@@ -20,7 +20,7 @@ import {
   type HolidayId,
 } from './calendar';
 import { hash01, hashNormal, hashSigned } from './prng';
-import { BASE_ITEM_COUNT, CATS, DEPTS, ITEMS, type Item } from './products';
+import { BASE_ITEM_COUNT, CATS, DEPTS, ingredientUnitCost, ITEMS, recipeCostAt, roundQty, type Item } from './products';
 import { isOpen, STORE_BY_ID, STORES } from './stores';
 import { EXTREME_ENTRY_DOLLARS, PLANTED } from './planted';
 import { PURCHASE_CHANNELS, type PurchaseBreakdown } from '../lib/kpis';
@@ -353,12 +353,8 @@ export function buildModel(): Model {
       // Cost: PO cost tracks retail at the target margin, with item-specific drift.
       let cost: number;
       if (it.composite) {
-        let std = price * (1 - DISCOUNT[d]) * (1 - it.margin);
-        // Slices take the pie's recipe cost divided by the slice count.
-        const so = it.composite.sliceOf;
-        const pie = so ? ITEMS.find((x) => x.name === so.item) : undefined;
-        if (so && pie?.composite) std = pie.composite.standardCost / so.slices;
-        it.composite.standardCost = std;
+        if (w === 0) setRecipeQuantities(it, price * (1 - DISCOUNT[d]) * (1 - it.margin));
+        const std = it.composite.standardCost;
         cost = w >= it.composite.updatedWeek ? std : std * 0.94;
       } else {
         if (it.vol === 'step') x = 0.015 * hashSigned(i, Math.floor(w / 13), 105);
@@ -480,6 +476,17 @@ export function buildModel(): Model {
   for (const a of model.salesAdj) model.salesAdjIndex.set(a.item * NW + a.week, a);
   model.events.forEach((e, n) => model.eventIndex.set(cellKey(e.item, e.store, e.week), n));
   return model;
+}
+
+/**
+ * Sets recipe quantities for recipes kept as cost shares (sized to the target cost, rounded the way a recipe
+ * card is written), then the standard cost: the recipe at ingredient costs in the month it was last updated.
+ */
+function setRecipeQuantities(it: Item, targetCost: number): void {
+  const c = it.composite!;
+  for (const comp of c.components)
+    if (comp.qty === 0 && comp.share > 0) comp.qty = roundQty((comp.share * targetCost) / ingredientUnitCost(comp.key, c.updatedWeek), comp.unit);
+  c.standardCost = recipeCostAt(c, c.updatedWeek);
 }
 
 function buildSalesAdj(m: Model): SalesAdj[] {

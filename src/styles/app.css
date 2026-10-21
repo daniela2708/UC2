@@ -1950,3 +1950,81 @@ tr.row-muted td,
   opacity: 0;
   pointer-events: none;
 }
+
+/* Column chooser presets */
+.col-presets {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--n3);
+  font-size: 12px;
+  color: var(--n5);
+}
+.chip-btn {
+  border: 1px solid var(--n3);
+  background: var(--white);
+  border-radius: 999px;
+  padding: 3px 10px;
+  font: inherit;
+  font-size: 12px;
+  color: var(--dark);
+  cursor: pointer;
+}
+.chip-btn.is-on,
+.chip-btn:hover {
+  border-color: var(--dark);
+}
+.chip-btn.is-on {
+  background: var(--dark);
+  color: var(--white);
+}
+
+/* Ingredients View */
+.swatch {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border-radius: 2px;
+  margin-right: 8px;
+  vertical-align: -1px;
+}
+.ing-table td .cell-bar {
+  min-width: 160px;
+}
+.where-used-controls {
+  align-items: flex-end;
+  margin: 6px 0 10px;
+}
+.where-used-controls .text-input {
+  width: 150px;
+}
+.text-input.is-invalid {
+  border-color: var(--neg);
+}
+.field-error {
+  color: var(--neg);
+  font-size: 12px;
+  margin: -4px 0 8px;
+}
+.btn-link.plain {
+  text-decoration: none;
+  color: inherit;
+  text-align: left;
+  padding: 0;
+}
+.btn-link.plain:hover {
+  text-decoration: underline;
+}
+.mini-table tr.is-selected td {
+  background: #eef4fc;
+}
+b.neg {
+  color: var(--neg);
+}
+b.pos {
+  color: var(--pos);
+}
+.where-used-controls .btn-link {
+  margin-bottom: 9px;
+}

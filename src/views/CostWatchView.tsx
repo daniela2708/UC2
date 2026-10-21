@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { CURRENT_WEEK } from '../data/calendar';
+import { CURRENT_WEEK, fiscalOfWeek, LAST_COMPLETE_WEEK } from '../data/calendar';
 import { COMPONENTS, componentIndex, COST_TYPE_LABEL, DEPTS, ITEMS } from '../data/products';
 import { catBand } from '../data/targets';
 import { Banner, KeyFigures, SectionHeading, type Tile } from '../components/Blocks';
@@ -21,7 +21,7 @@ const PO_COLUMNS: HierCol[] = [
   { key: 'type', label: 'Cost type', left: true, group: 'Cost' },
   { key: 'hq', label: 'Current PO Cost (HQ)', title: 'Cost held in HQ / Retalix, without freight', group: 'Cost' },
   { key: 'updated', label: 'HQ cost updated', group: 'Cost' },
-  { key: 'next', label: 'New PO Cost (4-week weighted)', title: 'Last 4 weeks of POs, weights 0.4 / 0.3 / 0.2 / 0.1 × quantity, freight included (Proposed)', group: 'Cost' },
+  { key: 'next', label: 'New PO Cost (last week)', title: 'Period-based PO cost of the last complete week: PO spend ÷ volume purchased, freight included (Proposed). "as of W41" when nothing was bought that week.', group: 'Cost' },
   { key: 'gap', label: 'Cost gap %', group: 'Cost' },
   { key: 'vendors', label: 'Vendors', group: 'Cost' },
   { key: 'units', label: 'Units sold (4 wk)', group: 'Sales' },
@@ -77,7 +77,15 @@ export function CostWatchView({ openDefinitions }: ViewProps) {
             <span className="cell-sub">{r.hqAgeMonths} months</span>
           </>
         ),
-        next: moneyUnit(r.next),
+        next:
+          r.nextWeek !== LAST_COMPLETE_WEEK ? (
+            <>
+              {moneyUnit(r.next)}
+              <span className="cell-sub">as of W{fiscalOfWeek(r.nextWeek).week}</span>
+            </>
+          ) : (
+            moneyUnit(r.next)
+          ),
         gap: <Var value={r.gap} kind="pct" invert />,
         vendors: (
           <span title={r.vendors.join(', ')}>
@@ -271,7 +279,7 @@ export function CostWatchView({ openDefinitions }: ViewProps) {
         />
         <span className="toggle-label">New PO Cost method</span>
         <StatusChip status="Proposed" />
-        <InfoTip text="New PO Cost = last 4 weeks of purchase orders, weighted 0.4 / 0.3 / 0.2 / 0.1 (newest first) × quantity, freight included. Real-time cost comes from Biceps and may change after invoice reconciliation." />
+        <InfoTip text="New PO Cost = PO spend ÷ volume purchased in the last complete week (FY2026 W42), freight included; when nothing was bought that week, the latest earlier week, marked 'as of'. Real-time cost comes from Biceps and may change after invoice reconciliation." />
       </div>
 
       {mode === 'recipe' && (

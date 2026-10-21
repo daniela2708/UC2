@@ -1,6 +1,7 @@
 import { Info } from 'lucide-react';
 import { useId, type ReactNode } from 'react';
 import { pts, pctChange, tone } from '../lib/format';
+import { HIGH_LOSS_FLAG_TIP } from '../lib/kpis';
 
 export function InfoTip({ text, below = false, label = 'More information' }: { text: string; below?: boolean; label?: string }) {
   const id = useId();
@@ -149,7 +150,7 @@ export function FlagCell({ flags, errors, extra }: { flags: number; errors: numb
     <span className="flag-cell">
       {flags > 0 && (
         <span className="flag-stack">
-          <span className={`chip ${errors > 0 ? 'error' : 'amber'}`}>
+          <span className={`chip ${errors > 0 ? 'error' : 'amber'}`} title={HIGH_LOSS_FLAG_TIP}>
             {flags} flag{flags === 1 ? '' : 's'}
           </span>
           <span className="flag-reason" title="Reason labels (Proposed)">

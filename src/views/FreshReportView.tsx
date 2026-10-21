@@ -290,7 +290,7 @@ export function FreshReportView({ openDefinitions }: ViewProps) {
     { key: 'vol', label: 'Total Volume', title: 'Units (ea) and weight (lb) sold; never added together', group: 'Sales' },
     { key: 'gm', label: 'Gross Margin $', title: 'Fresh Report gross profit: Gross Sales − Total Purchases', group: 'Margin' },
     { key: 'gmr', label: 'Gross Margin Rate', title: 'Fresh Report: (Gross Sales − Total Purchases) ÷ Gross Sales', group: 'Margin' },
-    { key: 'purch', label: 'Total Purchases', title: 'Total purchase cost after trade rates (Fresh Report channels)', group: 'Cost' },
+    { key: 'purch', label: 'Total Purchases · Fresh Report', title: 'Fresh Report purchases: store-level purchase cost after trade rates by channel (Whse, DSD, Packaging, Reclaim, Transfers, In transit, Donations, WC credit, Scan credit). Not the same measure as item PO spend in the Category-Item Summary.', group: 'Cost' },
     { key: 'loss', label: `Total Loss ($) · ${lossBasisWord(state.lossBasis)}`, title: lossTitle(state.lossBasis), group: 'Loss' },
     { key: 'budget', label: 'Budget GP %', title: 'Fresh Report budget, weighted by sales', group: 'Budget' },
     { key: 'vsBudget', label: 'vs Budget', title: 'Fresh gross profit rate − Budget GP %, in points', group: 'Budget' },
@@ -472,7 +472,7 @@ export function FreshReportView({ openDefinitions }: ViewProps) {
       label: 'Total Purchases',
       info: 'Total purchase cost after trade rates: Whse + DSD + Packaging + Reclaim + Transfers + In transit + Donations + WC credit + Scan credit.',
       value: moneyCompact(purch),
-      sub: 'Outside-vendor (C&S) cases not included',
+      sub: 'Fresh Report purchases · C&S cases not included',
     },
     {
       label: 'Total Loss ($)',

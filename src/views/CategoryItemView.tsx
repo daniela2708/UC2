@@ -6,7 +6,7 @@ import { CellBar, FlagCell, InfoTip, Segmented, StatusChip, Var } from '../compo
 import { C, ChartCard, ChartGrid, ItemMap, TrendLines, Waterfall, type ItemPoint } from '../components/Charts';
 import { describeProductScope, describeStoreScope } from '../lib/filters';
 import { actions } from '../lib/filterStore';
-import { DASH, money, moneyCompact, moneyUnit, pct, pctChange, volume, volumeCompact, weekTick } from '../lib/format';
+import { count, DASH, money, moneyCompact, moneyUnit, pct, pctChange, volume, volumeCompact, weekTick } from '../lib/format';
 import {
   COST_ELEMENTS,
   grossMargin,
@@ -18,12 +18,12 @@ import {
   yoyGrowth,
   type CostElement,
   marginAfterLoss,
-  purchaseCostPerUnitPurchased,
   sellThrough,
+  HIGH_LOSS_FLAG_TIP,
   type LossBasis,
   type MarginBase,
 } from '../lib/kpis';
-import { addAgg, emptyAgg, findFlags, isEntryError, itemAggregates, itemStores, trendWeeks, weeklyMargin, type Agg, type ItemAgg } from '../lib/selectors';
+import { addAgg, emptyAgg, findFlags, isEntryError, itemAggregates, itemStores, purchaseSource, trendWeeks, weeklyMargin, type Agg, type ItemAgg, type PurchaseSource } from '../lib/selectors';
 import { belowTarget, catBand, deptBand, type TargetBand } from '../data/targets';
 import { STORES } from '../data/stores';
 import { LAST_COMPLETE_WEEK } from '../data/calendar';
@@ -53,15 +53,25 @@ function itemColumns(idStores: boolean, basis: LossBasis): HierCol[] {
     { key: 'arpu', label: 'Average Retail Price per Unit', title: 'SUM(Gross Sales) ÷ SUM(Volume)', group: 'Sales', defaultHidden: true },
     { key: 'gm', label: 'Gross Margin $', title: 'Net Sales − Total Net Cost', group: 'Margin' },
     { key: 'gmr', label: 'Gross Margin Rate', title: 'SUM(Gross Margin) ÷ SUM(Gross Sales); shaded band = target (Proposed)', group: 'Margin' },
-    { key: 'purch', label: 'Total Purchases', title: 'Purchase cost after trade rates (merchandise channels, allocated to items)', group: 'Cost' },
-    { key: 'pcpu', label: 'Purchase Cost per Unit', title: 'SUM(Total Purchases) ÷ SUM(Volume)', group: 'Cost' },
-    { key: 'po', label: 'PO Cost / Unit', title: 'Purchase order cost per unit (landed), weighted by units sold', group: 'Cost' },
+    {
+      key: 'purch',
+      label: 'Total Purchases',
+      title:
+        'PO cost spent (Biceps PO cost × volume). UPC: warehouse bill-out, shipments to stores used as a proxy for purchases. Composite PLUs: production cost (recipe) = units produced (sold + known loss) × recipe cost; unknown loss not included. Store filters take the stores’ share of the category.',
+      group: 'Cost',
+    },
+    { key: 'pcpu', label: 'Purchase Cost per Unit', title: 'SUM(Total Purchases) ÷ SUM(volume purchased from PO data), within one unit of measure', group: 'Cost' },
+    {
+      key: 'po',
+      label: 'PO Cost / Unit',
+      title: 'Period-based (Proposed): PO spend in the period ÷ volume purchased in the period. "—" when nothing was bought; margins then use the most recent PO cost ("cost from W38"). UPC: average cost; composite PLUs: recipe cost.',
+      group: 'Cost',
+    },
     { key: 'tnc', label: 'Total Net Cost', title: 'Cost of units sold under the selected cost basis', group: 'Cost' },
     { key: 'ncu', label: 'Net Cost / Unit', title: 'Total Net Cost ÷ Total Volume', group: 'Cost' },
     { key: 'loss', label: `Total Loss ($) · ${lossBasisWord(basis)}`, title: lossTitle(basis), group: 'Loss' },
     { key: 'lossU', label: 'Total Loss (Units)', title: 'Known loss in units or lb', group: 'Loss' },
-    { key: 'flag', label: 'High Loss Flag', title: 'Item-store-weeks with known loss above $1,000 (workbook); reason labels are proposed', group: 'Loss' },
-    { key: 'pcpuP', label: 'Purchase Cost per Unit Purchased', title: 'Proposed: Total Purchases ÷ units purchased', group: 'Cost', defaultHidden: true },
+    { key: 'flag', label: 'High Loss Flag', title: HIGH_LOSS_FLAG_TIP, group: 'Loss' },
     { key: 'rel', label: 'Cost reliability', title: 'UPC: average cost is reliable. PLU and random weight: under review.', group: 'Cost', defaultHidden: true, left: true },
     { key: 'mal', label: 'Margin After Loss %', title: 'Proposed: Gross Margin Rate − loss rate (actual known loss or the expected rate)', group: 'Margin', defaultHidden: true },
     { key: 'gmLy', label: 'GM Rate vs LY', title: 'Gross Margin Rate − same fiscal weeks last year', group: 'Margin', defaultHidden: true },
@@ -84,15 +94,18 @@ function singleUom(a: Agg): 'ea' | 'lb' | null {
   return null;
 }
 
-/** Per-unit value within one unit of measure; mixed scopes show one line per unit, "—" where a unit has no volume. */
-function perUnit(a: Agg, numEa: number, numLb: number): { cell: ReactNode; sort: number | null } {
+/**
+ * Per-unit value within one unit of measure; mixed scopes show one line per unit, "—" where a unit has no volume.
+ * Denominators default to volume sold.
+ */
+function perUnit(a: Agg, numEa: number, numLb: number, denEa = a.ea, denLb = a.lb): { cell: ReactNode; sort: number | null } {
   const uom = singleUom(a);
   if (uom) {
-    const v = uom === 'ea' ? safeDiv(numEa, a.ea) : safeDiv(numLb, a.lb);
+    const v = uom === 'ea' ? safeDiv(numEa, denEa) : safeDiv(numLb, denLb);
     return { cell: moneyUnit(v), sort: v };
   }
-  const ea = safeDiv(numEa, a.ea);
-  const lb = safeDiv(numLb, a.lb);
+  const ea = safeDiv(numEa, denEa);
+  const lb = safeDiv(numLb, denLb);
   return {
     cell: (
       <span title="Mixed units: one value per unit of measure">
@@ -121,7 +134,17 @@ interface CellOpts {
   /** Loss rate used for Margin After Loss: null = actual known loss ÷ sales. */
   expectedLoss: number | null;
   reliability?: string;
+  /** Item rows: where Total Purchases come from. */
+  source?: PurchaseSource;
+  /** Item rows: earliest week whose PO cost was carried into a week without purchases. */
+  costFrom?: number;
 }
+
+const SOURCE_TIP: Record<PurchaseSource, string> = {
+  'Biceps PO': 'PO cost spent, from PO cost and volume in Biceps.',
+  'Warehouse bill-out': 'Bill-out is shipments to stores from the Weis distribution center, used as a proxy for purchases (UPC items have no Biceps PO).',
+  Recipe: 'Production cost (recipe): units produced (sold + known loss) × recipe cost. Unknown loss is not included.',
+};
 
 function signedMoney(v: number | null): string {
   if (v === null) return DASH;
@@ -143,15 +166,28 @@ function aggCells(
   const mal = marginAfterLoss(gmr, lossRate);
   const nspu = perUnit(a, a.netEa, a.netLb);
   const arpu = perUnit(a, a.grossEa, a.grossLb);
-  const pcpu = perUnit(a, a.purchEa, a.purchLb);
-  const pcpuP = (() => {
-    if (uom) {
-      const v = uom === 'ea' ? purchaseCostPerUnitPurchased(a.purchEa, a.purchUnitsEa) : purchaseCostPerUnitPurchased(a.purchLb, a.purchUnitsLb);
-      return { cell: moneyUnit(v), sort: v };
-    }
-    return { cell: DASH as ReactNode, sort: null };
-  })();
-  const po = perUnit(a, a.poEa, a.poLb);
+  const pcpu = perUnit(a, a.purchEa, a.purchLb, a.purchUnitsEa, a.purchUnitsLb);
+  const po = perUnit(a, a.poEa, a.poLb, a.poUnitsEa, a.poUnitsLb);
+  const sources = [a.srcPo ? `${count(a.srcPo)} Biceps PO` : '', a.srcBill ? `${count(a.srcBill)} warehouse bill-out` : '', a.srcRecipe ? `${count(a.srcRecipe)} recipe` : ''].filter(Boolean);
+  const purchCell =
+    o.source ? (
+      <>
+        {money(a.purch)}
+        <span className="cell-sub" title={SOURCE_TIP[o.source]}>
+          {o.source === 'Recipe' ? 'Production cost (recipe)' : o.source}
+        </span>
+      </>
+    ) : sources.length > 1 ? (
+      <>
+        {money(a.purch)}
+        <span className="cell-sub" title={`Mixed sources: ${sources.join(' · ')}. ${SOURCE_TIP['Warehouse bill-out']}`}>
+          Mixed sources
+        </span>
+      </>
+    ) : (
+      money(a.purch)
+    );
+  const carried = o.costFrom !== undefined && o.costFrom >= 0 ? <span className="cell-sub amber" title="No purchases in some weeks of the range: margin uses the most recent PO cost">cost from W{fiscalOfWeek(o.costFrom).week}</span> : null;
   const ncu = perUnit(a, a.costEa, a.costLb);
   const st = sellThrough(a.ea + a.lb, a.shipEa + a.shipLb);
   const yg = yoyGrowth(a.gross, a.lyGross);
@@ -163,13 +199,26 @@ function aggCells(
       vol: twoVolumes(a.ea, a.lb, uom),
       nspu: nspu.cell,
       arpu: arpu.cell,
-      gm: money(gm),
+      gm: carried ? (
+        <>
+          {money(gm)}
+          {carried}
+        </>
+      ) : (
+        money(gm)
+      ),
       gmr: <CellBar value={gmr} max={0.75} text={pct(gmr)} band={band} />,
-      purch: money(a.purch),
+      purch: purchCell,
       pcpu: pcpu.cell,
-      pcpuP: pcpuP.cell,
       po: po.cell,
-      tnc: money(a.cost),
+      tnc: carried ? (
+        <>
+          {money(a.cost)}
+          {carried}
+        </>
+      ) : (
+        money(a.cost)
+      ),
       ncu: ncu.cell,
       rel: o.reliability ?? '',
       loss: money(loss),
@@ -199,7 +248,6 @@ function aggCells(
       gmr,
       purch: a.purch,
       pcpu: pcpu.sort,
-      pcpuP: pcpuP.sort,
       po: po.sort,
       tnc: a.cost,
       ncu: ncu.sort,
@@ -272,7 +320,7 @@ export function CategoryItemView({ openDefinitions }: ViewProps) {
       const reasons = below ? [...a.flagReasons, 'Below target'] : a.flagReasons;
       const c = aggCells(
         a,
-        { ...cellOpts, expectedLoss: expFor(it.dept), reliability: it.costType === 'UPC' ? 'Reliable (average cost)' : 'Under review' },
+        { ...cellOpts, expectedLoss: expFor(it.dept), reliability: it.costType === 'UPC' ? 'Reliable (average cost)' : 'Under review', source: purchaseSource(a.item), costFrom: a.costFrom },
         reasons.length || a.highFlags ? (
           <FlagCell
             flags={a.highFlags}
@@ -392,9 +440,12 @@ export function CategoryItemView({ openDefinitions }: ViewProps) {
     },
     {
       label: 'Total Purchases',
-      info: 'Purchase cost after trade rates: merchandise channels (Whse, DSD, Reclaim, Transfers, In transit) allocated to items by cost of goods plus loss.',
+      info: 'PO cost spent (Biceps). UPC: warehouse bill-out (shipments to stores, a proxy for purchases). Composite PLUs: production cost (recipe), unknown loss not included.',
       value: moneyCompact(total.purch),
-      sub: `Merchandise · weekly W${(range.startWeek % 52) + 1}–W${(range.endWeek % 52) + 1}`,
+      sub: (() => {
+        const n = [total.srcPo, total.srcBill, total.srcRecipe].filter((x) => x > 0).length;
+        return n > 1 ? 'Mixed sources: Biceps PO, bill-out, recipe' : total.srcRecipe ? 'Production cost (recipe)' : total.srcBill ? 'Warehouse bill-out' : 'Biceps PO';
+      })(),
     },
     {
       label: 'Total Loss ($)',
@@ -513,7 +564,7 @@ export function CategoryItemView({ openDefinitions }: ViewProps) {
         tiles={tiles}
         note={
           <>
-            Total Net Sales, Gross Margin Rate and Total Loss are <b>Pending validation</b>; cost basis and the item purchases allocation are <b>Proposed</b>.{' '}
+            Total Net Sales, Gross Margin Rate and Total Loss are <b>Pending validation</b>; cost basis and the period-based PO cost are <b>Proposed</b>.{' '}
             <button type="button" className="btn-link" onClick={() => openDefinitions('gm-rate')}>
               See definitions
             </button>
@@ -578,7 +629,7 @@ export function CategoryItemView({ openDefinitions }: ViewProps) {
         </ChartCard>
       </ChartGrid>
 
-      <Banner kind="note">Item sales and margin are available by day. Purchases and known loss are weekly in the source systems and are prorated for partial weeks.</Banner>
+      <Banner kind="note">Item sales, margin and PO purchases are available by day. Known loss is weekly in the source system and is prorated for partial weeks.</Banner>
 
       <section className="card table-card" aria-label="Category-item table">
         <p className="card-caption">Department › Category › Subcategory › SKU Number · {range.label}</p>
@@ -609,6 +660,7 @@ export function CategoryItemView({ openDefinitions }: ViewProps) {
           hierarchy="Department › Category › Subcategory › SKU Number"
           columns={itemColumns(state.idStores, state.lossBasis)}
           tableId="items"
+          presets={[{ label: 'Loss focus', keys: ['gross', 'vol', 'loss', 'lossU', 'flag'] }]}
           defaultSort={{ key: 'gross', dir: 'desc' }}
           defaultExpanded={state.dept >= 0 ? [`d${state.dept}`, ...(state.cat >= 0 ? [`c${state.cat}`] : []), ...(state.sub >= 0 ? [`s${state.sub}`] : [])] : []}
           exportTitle={`Category-Item Summary ${range.label}`}

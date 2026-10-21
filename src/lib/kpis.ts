@@ -146,31 +146,13 @@ export function weightedUnitCost(sumCostTimesUnits: Num, units: Num): number | n
   return safeDiv(sumCostTimesUnits, units);
 }
 
-export interface PoLine {
-  /** Whole weeks between the order and the end of the window (0 = most recent week). */
-  weeksBack: number;
-  units: number;
-  unitCost: number;
-}
-
-/** Recency weights for New PO Cost, newest week first (Proposed). */
-export const NEW_PO_COST_WEIGHTS = [0.4, 0.3, 0.2, 0.1] as const;
-
 /**
- * New PO Cost = Σ (weight(week) × units × landed unit cost) ÷ Σ (weight(week) × units) over the last 4 weeks.
- * Lines older than 4 weeks, with negative units or a negative cost are ignored. No usable lines → null.
+ * Period-based PO Cost / Unit (BCG proposal, Proposed): total PO spend in the period ÷ volume purchased in the
+ * period. A period with no volume purchased has no PO cost (null, shown as a gap); negative inputs are refused.
  */
-export function newPoCostWeighted(lines: PoLine[]): number | null {
-  let num = 0;
-  let den = 0;
-  for (const l of lines) {
-    if (!Number.isInteger(l.weeksBack) || l.weeksBack < 0 || l.weeksBack >= NEW_PO_COST_WEIGHTS.length) continue;
-    if (!(l.units > 0) || !(l.unitCost >= 0)) continue;
-    const w = NEW_PO_COST_WEIGHTS[l.weeksBack] * l.units;
-    num += w * l.unitCost;
-    den += w;
-  }
-  return den > 0 ? num / den : null;
+export function periodPoCost(spend: Num, unitsPurchased: Num): number | null {
+  if (!ok(spend) || !ok(unitsPurchased) || spend < 0 || unitsPurchased <= 0) return null;
+  return spend / unitsPurchased;
 }
 
 /** Cost change from Current PO Cost (HQ) to New PO Cost: $ and %. */
@@ -213,16 +195,10 @@ export function totalPurchases(b: PurchaseBreakdown): number {
   return t;
 }
 
-/** Purchase Cost per Unit = SUM(Total Purchases) ÷ SUM(Volume) — workbook definition, volume sold (legacy source: Biceps). */
-export function purchaseCostPerUnit(totalPurchasesSum: Num, volumeSold: Num): number | null {
-  if (typeof volumeSold === 'number' && volumeSold < 0) return null;
-  return safeDiv(totalPurchasesSum, volumeSold);
-}
-
-/** Purchase Cost per Unit Purchased = Total Purchases ÷ units purchased (Proposed alternative, hidden column). */
-export function purchaseCostPerUnitPurchased(totalPurchasesSum: Num, unitsPurchased: Num): number | null {
-  if (typeof unitsPurchased === 'number' && unitsPurchased < 0) return null;
-  return safeDiv(totalPurchasesSum, unitsPurchased);
+/** Purchase Cost per Unit = SUM(Total Purchases) ÷ SUM(volume purchased from PO data) — workbook (legacy source: Biceps). */
+export function purchaseCostPerUnit(totalPurchasesSum: Num, volumePurchased: Num): number | null {
+  if (typeof volumePurchased === 'number' && volumePurchased < 0) return null;
+  return safeDiv(totalPurchasesSum, volumePurchased);
 }
 
 /** Fresh GP % = (Sales − Total Purchases) ÷ Sales. Weekly or period to date only. */
@@ -261,6 +237,11 @@ export interface LossRule {
 
 /** Workbook: High Loss Flag = loss higher than $1,000 in a given week. The 26-week rule is a proposed refinement, off by default. */
 export const DEFAULT_LOSS_RULE: LossRule = { dollars: 1000, pct: 1, avg: false };
+
+/** Threshold basis of the $1,000 flag: assumed at cost until Weis confirms (open question 3). */
+export const FLAG_BASIS_NOTE =
+  'Threshold basis: at cost, assumed, Pending validation. Nobody has confirmed whether the current $1,000 rule is at cost or at retail, and the workbook Recon Map points to KL1011 "Known Loss Retail $" (open question 3).';
+export const HIGH_LOSS_FLAG_TIP = `High Loss Flag (workbook): known loss higher than $1,000 for an item in a store in a given week. ${FLAG_BASIS_NOTE} Reason labels are proposed.`;
 export const LOSS_RULE_LIMITS = { dollars: { min: 250, max: 100_000 }, pct: { min: 0, max: 10 } } as const;
 
 export function clamp(n: number, min: number, max: number): number {

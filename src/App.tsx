@@ -10,6 +10,7 @@ import { CategoryItemView } from './views/CategoryItemView';
 import { FreshReportView } from './views/FreshReportView';
 import { CostWatchView } from './views/CostWatchView';
 import { ItemCostView } from './views/ItemCostView';
+import { IngredientsView } from './views/IngredientsView';
 import { KnownLossReportView } from './views/KnownLossReportView';
 
 /** Shows a generic message to users; details go to the console only. */
@@ -48,6 +49,8 @@ function Shell() {
         return <FreshReportView openDefinitions={openDefinitions} />;
       case 'itemcost':
         return <ItemCostView openDefinitions={openDefinitions} />;
+      case 'ingredients':
+        return <IngredientsView openDefinitions={openDefinitions} />;
       case 'loss':
         return <KnownLossReportView openDefinitions={openDefinitions} />;
       case 'cost':
