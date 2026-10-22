@@ -3,7 +3,7 @@ import { CATS, DEPTS, ITEMS, SUBS } from '../data/products';
 import { Banner, BannerStack, KeyFigures, SectionHeading, type Tile } from '../components/Blocks';
 import { HierTable, type HierCol, type HierRow } from '../components/HierTable';
 import { CellBar, FlagCell, InfoTip, Segmented, StatusChip, Var } from '../components/ui';
-import { C, ChartCard, ChartGrid, ItemMap, TrendLines, Waterfall, type ItemPoint } from '../components/Charts';
+import { C, ChartCard, ChartGrid, TrendLines, Waterfall } from '../components/Charts';
 import { describeProductScope, describeStoreScope } from '../lib/filters';
 import { actions } from '../lib/filterStore';
 import { count, DASH, money, moneyCompact, moneyUnit, pct, pctChange, volume, volumeCompact, weekTick } from '../lib/format';
@@ -500,28 +500,6 @@ export function CategoryItemView({ openDefinitions }: ViewProps) {
     { label: 'Loss', value: loss ?? 0, kind: 'minus' as const },
     { label: 'After loss', value: (gm ?? 0) - (loss ?? 0), kind: 'total' as const },
   ];
-  const mapPoints: ItemPoint[] = aggs
-    .filter((a) => a.net > 0 && a.gross > 0)
-    .map((a) => {
-      const l = totalLoss(a.loss, a.lossRetail, basis) ?? 0;
-      return {
-        id: a.item,
-        name: ITEMS[a.item].name,
-        x: grossMarginRate(a.net - a.cost, a.gross, a.net, mb) ?? 0,
-        y: l / a.gross,
-        z: a.gross,
-        flagged: a.highFlags > 0,
-      };
-    });
-  const q = (arr: number[], p: number) => {
-    if (!arr.length) return 0;
-    const v = [...arr].sort((a, b) => a - b);
-    return v[Math.min(v.length - 1, Math.max(0, Math.floor(p * (v.length - 1))))];
-  };
-  const mapDomain = {
-    x: [Math.min(0, Math.floor(q(mapPoints.map((p) => p.x), 0.01) * 20) / 20), Math.ceil(q(mapPoints.map((p) => p.x), 0.99) * 20) / 20] as [number, number],
-    y: [0, Math.max(0.02, Math.ceil(q(mapPoints.map((p) => p.y), 0.98) * 50) / 50)] as [number, number],
-  };
 
   const toggleCost = (e: CostElement) =>
     update((s) => ({ ...s, costBasis: s.costBasis.includes(e) ? s.costBasis.filter((x) => x !== e) : [...s.costBasis, e] }));
@@ -595,7 +573,7 @@ export function CategoryItemView({ openDefinitions }: ViewProps) {
         }
       />
 
-      <ChartGrid cols={3}>
+      <ChartGrid cols={2}>
         <ChartCard
           title="Gross Margin Rate by week"
           subtitle={`On ${baseWord} · this year vs same fiscal weeks last year · ${weekTick(weeks[0], latestFy)}–${weekTick(weeks[weeks.length - 1], latestFy)}`}
@@ -625,30 +603,6 @@ export function CategoryItemView({ openDefinitions }: ViewProps) {
           table={{ head: ['Step', 'Amount'], rows: bridge.map((b) => [b.label, (b.kind === 'minus' ? '−' : '') + money(b.value)]) }}
         >
           <Waterfall steps={bridge} format={(v) => moneyCompact(v)} />
-        </ChartCard>
-        <ChartCard
-          title="Item map: margin vs loss"
-          subtitle={`Each bubble is an item sized by gross sales; lines mark the scope average. Gross Margin Rate on ${baseWord}. Click a bubble to filter.`}
-          legend={[
-            { label: 'Items', color: C.s1, kind: 'dot' },
-            { label: 'High Loss Flag', color: C.neg, kind: 'dot' },
-          ]}
-          table={{
-            head: ['Item', 'Gross Margin Rate', 'Loss % of sales', 'Total Gross Sales'],
-            rows: [...mapPoints].sort((a, b) => b.z - a.z).slice(0, 40).map((p) => [p.name, pct(p.x), pct(p.y), money(p.z)]),
-          }}
-        >
-          <ItemMap
-            points={mapPoints}
-            xRef={gmr ?? 0}
-            yRef={lossPct ?? 0}
-            xDomain={mapDomain.x}
-            yDomain={mapDomain.y}
-            onSelect={(id) => update(actions.item(id))}
-            fmtX={(v) => `${(v * 100).toFixed(0)}%`}
-            fmtY={(v) => `${(v * 100).toFixed(mapDomain.y[1] < 0.2 ? 1 : 0)}%`}
-            fmtZ={(v) => moneyCompact(v)}
-          />
         </ChartCard>
       </ChartGrid>
 

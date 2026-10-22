@@ -12,12 +12,9 @@ import {
   Line,
   LineChart,
   ReferenceLine,
-  Scatter,
-  ScatterChart,
   Tooltip,
   XAxis,
   YAxis,
-  ZAxis,
 } from 'recharts';
 
 /**
@@ -576,90 +573,6 @@ export function Waterfall({
         />
       </Bar>
     </BarChart>
-  );
-}
-
-// ---------------------------------------------------------------- Item map (scatter)
-
-export interface ItemPoint {
-  id: number;
-  name: string;
-  x: number;
-  y: number;
-  z: number;
-  flagged: boolean;
-}
-
-export function ItemMap({
-  width,
-  height,
-  points,
-  xRef,
-  yRef,
-  xDomain,
-  yDomain,
-  onSelect,
-  fmtX,
-  fmtY,
-  fmtZ,
-}: {
-  width?: number;
-  height?: number;
-  points: ItemPoint[];
-  xRef: number;
-  yRef: number;
-  xDomain: [number, number];
-  yDomain: [number, number];
-  onSelect: (id: number) => void;
-  fmtX: (v: number) => string;
-  fmtY: (v: number) => string;
-  fmtZ: (v: number) => string;
-}) {
-  const normal = points.filter((p) => !p.flagged);
-  const flagged = points.filter((p) => p.flagged);
-  const tip = ({ active, payload }: { active?: boolean; payload?: { payload?: unknown }[] }) => {
-    if (!active || !payload?.length) return null;
-    const p = payload[0].payload as ItemPoint;
-    return (
-      <TipBox
-        title={p.name}
-        rows={[
-          { label: 'Gross margin', value: fmtX(p.x) },
-          { label: 'Loss % of sales', value: fmtY(p.y) },
-          { label: 'Gross sales', value: fmtZ(p.z) },
-        ]}
-      />
-    );
-  };
-  return (
-    <ScatterChart width={width} height={height} margin={{ top: 12, right: 16, bottom: 8, left: 4 }}>
-      <XAxis type="number" dataKey="x" {...axisProps} domain={xDomain} allowDataOverflow tickFormatter={fmtX} name="GM %" />
-      <YAxis type="number" dataKey="y" {...axisProps} domain={yDomain} allowDataOverflow tickFormatter={fmtY} width={44} name="Loss %" />
-      <ZAxis type="number" dataKey="z" range={[24, 420]} />
-      <ReferenceLine x={xRef} stroke={C.axis} strokeWidth={1} />
-      <ReferenceLine y={yRef} stroke={C.axis} strokeWidth={1} />
-      <Tooltip content={tip} cursor={false} />
-      <Scatter
-        data={normal}
-        fill={C.s1}
-        fillOpacity={0.55}
-        stroke="#fff"
-        strokeWidth={1}
-        isAnimationActive={false}
-        cursor="pointer"
-        onClick={(p) => onSelect((p as unknown as ItemPoint).id)}
-      />
-      <Scatter
-        data={flagged}
-        fill={C.neg}
-        fillOpacity={0.85}
-        stroke="#fff"
-        strokeWidth={1}
-        isAnimationActive={false}
-        cursor="pointer"
-        onClick={(p) => onSelect((p as unknown as ItemPoint).id)}
-      />
-    </ScatterChart>
   );
 }
 
