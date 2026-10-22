@@ -5,7 +5,7 @@ import { useMemo, useState } from 'react';
 import { fiscalOfWeek, formatDay, LAST_COMPLETE_WEEK, weekOfDay } from '../data/calendar';
 import { getModel, NW } from '../data/generate';
 import { COST_TYPE_LABEL, DEPTS, ITEMS, type Item } from '../data/products';
-import { costSeries, currentPoCost, hqUnitCostWeek, newPoCostInfo, ordersOf, poUnitCostWeek, supplyOf } from '../data/purchasing';
+import { costSeries, currentPoCost, newPoCostInfo, ordersOf, supplyOf } from '../data/purchasing';
 import { Banner, KeyFigures, SectionHeading, type Tile } from '../components/Blocks';
 import { C, ChartCard, CostQtyPanels, type CostQtyPoint } from '../components/Charts';
 import { ExportButton } from '../components/ExportButton';
@@ -99,7 +99,7 @@ function ItemCostBody({
   const chartData: CostQtyPoint[] = series.map((p) => {
     const f = fiscalOfWeek(p.week);
     return {
-      x: period === 'week' ? weekTick(p.week, fy) : `P${f.period}${f.fy !== fy ? ` FY${String(f.fy).slice(2)}` : ''}`,
+      x: period === 'week' ? weekTick(p.week) : `P${f.period}${f.fy !== fy ? ` FY${String(f.fy).slice(2)}` : ''}`,
       cost: p.cost,
       hq: p.hq,
       retail: m.retail[i * NW + p.week],
@@ -108,29 +108,44 @@ function ItemCostBody({
   });
   const gaps = series.filter((p) => p.cost === null).length;
 
-  // Est. margin impact over the range: (PO cost − HQ cost) × units sold, week by week (weeks without purchases carry the last PO cost).
-  const { impact, spend, qty } = useMemo(() => {
-    let impact = 0;
-    for (let w = w0; w <= endWeek; w++) impact += (poUnitCostWeek(i, w) - hqUnitCostWeek(i, w)) * m.units[i * NW + w];
+  // Volume and spend over the range, for the Historical PO Cost (weighted average PO cost of the filtered period).
+  const { spend, qty } = useMemo(() => {
     let spend = 0;
     let qty = 0;
     for (const p of series) {
       spend += p.spend;
       qty += p.units;
     }
-    return { impact, spend, qty };
-  }, [i, w0, endWeek, m, series]);
+    return { spend, qty };
+  }, [series]);
+  const historical = periodPoCost(spend, qty);
+  const gmHistorical = retail && retail > 0 && historical !== null ? 1 - historical / retail : null;
 
   const orders = useMemo(() => ordersOf(i).filter((o) => o.day >= range.start && o.day <= range.end).reverse(), [i, range.start, range.end]);
   const asOf = nextInfo.week !== endWeek ? ` · as of W${fiscalOfWeek(nextInfo.week).week}` : '';
+  const bandText = `target ${(band.lo * 100).toFixed(0)}–${(band.hi * 100).toFixed(0)} %`;
+  const below = (v: number | null) => belowTarget(v, band) && <> · <span className="chip neutral">Below target</span></>;
 
   const tiles: Tile[] = [
-    { label: 'Current PO Cost', info: 'The per-unit cost held today in Retalix HQ (Weis’s back-office system), which Power BI uses.', value: moneyUnit(current), sub: `HQ · updated ${sup.hqUpdatedLabel}${it.costType === 'UPC' ? ' · average cost' : ''}` },
     {
-      label: 'New PO Cost',
+      label: 'PO Cost according to HQ',
+      info: 'The per-unit cost held today in Retalix HQ (Weis’s back-office system), which Power BI uses.',
+      value: moneyUnit(current),
+      sub: `Retalix HQ · updated ${sup.hqUpdatedLabel}${it.costType === 'UPC' ? ' · average cost' : ''}`,
+    },
+    {
+      label: 'Historical PO Cost',
+      info: produced
+        ? 'Weighted average recipe cost for the filtered period: production cost ÷ units produced.'
+        : 'Weighted average PO cost for the filtered period: total PO spend ÷ volume purchased, freight included (Proposed).',
+      value: moneyUnit(historical),
+      sub: range.label,
+    },
+    {
+      label: 'Real-time PO Cost',
       info: produced
         ? 'Recipe cost at the last complete week’s ingredient costs.'
-        : 'Period-based PO cost of the last complete week: PO spend ÷ volume purchased, freight included (Proposed). When nothing was bought that week, the latest earlier week.',
+        : 'PO cost of the last complete week: PO spend ÷ volume purchased, freight included (Proposed). When nothing was bought that week, the latest earlier week.',
       value: moneyUnit(next),
       sub: produced
         ? `Recipe at W${fiscalOfWeek(endWeek).week} ingredient costs`
@@ -138,7 +153,12 @@ function ItemCostBody({
           ? `W${fiscalOfWeek(nextInfo.week).week} DSD receipt cost (Retalix HQ)`
           : `W${fiscalOfWeek(nextInfo.week).week} POs, incl. freight${asOf}`,
     },
-    { label: 'Cost change', info: 'New PO Cost − Current PO Cost, in $ and %.', value: <Var value={change.pct} kind="pct" invert />, sub: change.abs === null ? '—' : `${change.abs >= 0 ? '+' : '−'}${moneyUnit(Math.abs(change.abs))} per ${unit}` },
+    {
+      label: 'Cost change',
+      info: 'Real-time PO Cost − PO Cost according to HQ, in $ and %.',
+      value: <Var value={change.pct} kind="pct" invert />,
+      sub: change.abs === null ? '—' : `${change.abs >= 0 ? '+' : '−'}${moneyUnit(Math.abs(change.abs))} per ${unit} vs HQ`,
+    },
     {
       label: produced ? 'Units produced' : it.dsd ? 'Volume received' : 'Volume purchased',
       info: produced ? 'Composite PLUs are made in store: units produced = units sold + known loss units.' : 'Volume received on purchase orders in the range (Biceps).',
@@ -146,32 +166,38 @@ function ItemCostBody({
       sub: produced ? 'Sold + known loss' : it.dsd ? `${moneyCompact(spend)} DSD receipts (Retalix HQ)` : `${moneyCompact(spend)} PO spend · ${sup.caseLabel}`,
     },
     {
-      label: 'Purchase Cost per Unit',
-      info: 'SUM(Total Purchases) ÷ SUM(volume purchased) over the range. Composite PLUs: production cost (recipe) ÷ units produced.',
-      value: moneyUnit(periodPoCost(spend, qty)),
-      sub: `${range.label}`,
-    },
-    {
-      label: 'GM Rate · current cost',
-      info: 'Gross Margin Rate at the HQ cost: 1 − cost ÷ average retail (last 4 weeks). Target band is Proposed.',
+      label: 'GM Rate · HQ cost',
+      info: 'Gross Margin Rate at the PO Cost according to HQ: 1 − cost ÷ average retail (last 4 weeks). Target band is Proposed.',
       value: pct(gmCurrent),
       sub: (
         <>
-          Retail {moneyUnit(retail)} / {unit} · target {(band.lo * 100).toFixed(0)}–{(band.hi * 100).toFixed(0)} %{belowTarget(gmCurrent, band) && <> <span className="chip neutral">Below target</span></>}
+          Retail {moneyUnit(retail)} / {unit} · {bandText}
+          {below(gmCurrent)}
         </>
       ),
     },
     {
-      label: 'GM Rate · new cost',
-      info: 'Gross Margin Rate at New PO Cost, against the category target band (Proposed).',
-      value: pct(gmNew),
+      label: 'GM Rate · historical cost',
+      info: 'Gross Margin Rate at the Historical PO Cost (weighted average for the filtered period), against the target band (Proposed).',
+      value: pct(gmHistorical),
       sub: (
         <>
-          <Var value={pointsDiff(gmNew, gmCurrent)} /> vs current cost{belowTarget(gmNew, band) && <> · <span className="chip neutral">Below target</span></>}
+          <Var value={pointsDiff(gmHistorical, gmCurrent)} /> vs HQ cost
+          {below(gmHistorical)}
         </>
       ),
     },
-    { label: 'Est. margin impact', info: 'Σ (PO cost − HQ cost) × units sold, week by week over the range. Positive = margin overstated by the HQ cost.', value: moneyCompact(impact), sub: impact > 0 ? 'Margin overstated in reports' : 'Margin understated in reports' },
+    {
+      label: 'GM Rate · real-time cost',
+      info: 'Gross Margin Rate at the Real-time PO Cost, against the target band (Proposed).',
+      value: pct(gmNew),
+      sub: (
+        <>
+          <Var value={pointsDiff(gmNew, gmCurrent)} /> vs HQ cost
+          {below(gmNew)}
+        </>
+      ),
+    },
   ];
 
   const qtyLabel = produced ? 'Units produced' : it.dsd ? 'Volume received (DSD)' : 'Volume purchased';
@@ -181,12 +207,19 @@ function ItemCostBody({
 
   return (
     <>
-      <SectionHeading eyebrow="Item cost" title="Item Cost Over Time" question="What does this item really cost us, and since when?">
-        {it.name} ({it.code}), {range.label}: Current PO Cost <b>{moneyUnit(current)}</b> / {unit} in Retalix HQ vs New PO Cost <b>{moneyUnit(next)}</b> (
+      <SectionHeading
+        eyebrow="Item cost"
+        title="Item Cost Over Time"
+        question="What does this item really cost us, and since when?"
+        painPoint="No real-time cost for commoditized items: PLU and random-weight items are costed in Retalix HQ with a default updated a few times a year, while the real cost changes every week on purchase orders."
+        validate="Access to PO cost in Biceps and its link to Retalix HQ (open question 2); the period-based PO cost method and which cost per unit values are most useful, to align with the business team."
+      >
+        {it.name} ({it.code}), {range.label}: PO Cost according to HQ <b>{moneyUnit(current)}</b> / {unit}, Historical PO Cost <b>{moneyUnit(historical)}</b> for the
+        period, Real-time PO Cost <b>{moneyUnit(next)}</b> (
         <b>
           <Var value={change.pct} kind="pct" invert />
-        </b>
-        ); estimated margin impact <b>{moneyCompact(impact)}</b> over the range.
+        </b>{' '}
+        vs HQ).
       </SectionHeading>
 
       <div className="toggle-row ic-picker-row">
@@ -236,7 +269,7 @@ function ItemCostBody({
         tiles={tiles}
         note={
           <>
-            Current PO Cost is the cost in Retalix HQ; New PO Cost comes from purchase orders.{' '}
+            PO Cost according to HQ is the cost in Retalix HQ; Historical PO Cost is the weighted average of purchase orders in the filtered period; Real-time PO Cost is the last complete week. Which cost per unit values are most useful is to align with the business team.{' '}
             <button type="button" className="btn-link" onClick={() => openDefinitions('po-cost')}>
               See definitions
             </button>
@@ -246,16 +279,16 @@ function ItemCostBody({
 
       <ChartCard
         title="Item Cost Over Time"
-        subtitle={`By ${bucket.toLowerCase()} · ${costLabel} ${produced ? '' : it.dsd ? '(DSD receipts in Retalix HQ ÷ volume received) ' : '(PO spend ÷ volume purchased, incl. freight) '}· dashed line = Current PO Cost (HQ)${gaps ? ` · ${gaps} ${period === 'week' ? 'week' : 'period'}${gaps > 1 ? 's' : ''} without purchases shown as gaps` : ''} · ${qtyLabel.toLowerCase()} below`}
+        subtitle={`By ${bucket.toLowerCase()} · ${costLabel} ${produced ? '' : it.dsd ? '(DSD receipts in Retalix HQ ÷ volume received) ' : '(PO spend ÷ volume purchased, incl. freight) '}· dashed line = PO Cost according to HQ${gaps ? ` · ${gaps} ${period === 'week' ? 'week' : 'period'}${gaps > 1 ? 's' : ''} without purchases shown as gaps` : ''} · ${qtyLabel.toLowerCase()} below`}
         height={400}
         legend={[
           { label: costLabel, color: C.s1 },
-          { label: 'Current PO Cost (HQ)', color: C.axis },
+          { label: 'PO Cost according to HQ', color: C.axis },
           ...(showRetail ? [{ label: 'Retail', color: C.s3 }] : []),
           { label: qtyLabel, color: C.qty, kind: 'rect' as const },
         ]}
         table={{
-          head: [bucket, costLabel, 'Current PO Cost (HQ)', 'Retail', qtyLabel, produced ? 'Production cost' : 'PO spend'],
+          head: [bucket, costLabel, 'PO Cost according to HQ', 'Retail', qtyLabel, produced ? 'Production cost' : 'PO spend'],
           rows: chartData.map((d, n) => [d.x, d.cost === null ? '—' : moneyUnit(d.cost), moneyUnit(d.hq), moneyUnit(d.retail), Math.round(d.qty), moneyCompact(series[n].spend)]),
         }}
       >

@@ -44,8 +44,8 @@ export function ItReportProvider({ children }: { children: ReactNode }) {
   return <ItContext.Provider value={value}>{children}</ItContext.Provider>;
 }
 
-/** "Report to IT" action for one or more flagged entries. */
-export function ReportToItButton({ flags, label = 'Report to IT' }: { flags: FlagHit[]; label?: string }) {
+/** "Add to IT Review List" action for one or more flagged entries. */
+export function ReportToItButton({ flags, label = 'Add to IT Review List' }: { flags: FlagHit[]; label?: string }) {
   const { has, add } = useItReport();
   const pending = flags.filter((f) => !has(f));
   if (flags.length === 0) return null;
@@ -55,14 +55,14 @@ export function ReportToItButton({ flags, label = 'Report to IT' }: { flags: Fla
       type="button"
       className={`chart-view-btn it-btn${done ? ' is-done' : ''}`}
       disabled={done}
-      title={done ? 'Already on the IT review list' : 'Add to the IT review list'}
+      title={done ? 'Already on the IT Review List' : 'Add to the IT Review List'}
       onClick={(e) => {
         e.stopPropagation();
         add(pending);
       }}
     >
       <Send size={13} aria-hidden="true" />
-      {done ? 'On IT list' : label}
+      {done ? 'On IT Review List' : label}
     </button>
   );
 }
@@ -73,10 +73,10 @@ export function ItReviewList() {
   const stamp = new Date().toISOString().slice(0, 10);
   const total = entries.reduce((a, e) => a + e.cost, 0);
   return (
-    <section className="card side-card" aria-label="IT review list">
+    <section className="card side-card" aria-label="IT Review List">
       <div className="side-actions">
         <div>
-          <h3 className="side-title">IT review list · {entries.length}</h3>
+          <h3 className="side-title">IT Review List · {entries.length}</h3>
           <p className="side-sub">Entries to remove from known loss. Kept for this session only; the export is the hand-off to IT.</p>
         </div>
         <div className="side-buttons">
@@ -95,7 +95,7 @@ export function ItReviewList() {
         </div>
       </div>
       {entries.length === 0 ? (
-        <p className="empty">No entries yet. Use “Report to IT” on a flagged row.</p>
+        <p className="empty">No entries yet. Use “Add to IT Review List” on a flagged row.</p>
       ) : (
         <div className="po-scroll">
           <table className="mini-table">

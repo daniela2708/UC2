@@ -45,12 +45,12 @@ import {
 // ---------------------------------------------------------------- Types
 
 export type TabId = 'items' | 'itemcost' | 'ingredients' | 'fresh' | 'loss';
-/** The workbook's required views come first; the rest are proposed additional views. */
+/** The five required views, in the order agreed after the prototype review (real-time cost first). */
 export const TABS: { id: TabId; label: string; required: boolean }[] = [
-  { id: 'items', label: 'Category-Item Summary', required: true },
   { id: 'itemcost', label: 'Item Cost Over Time', required: true },
-  { id: 'ingredients', label: 'Ingredients View', required: true },
+  { id: 'items', label: 'Category-Item Summary', required: true },
   { id: 'fresh', label: 'Fresh Report', required: true },
+  { id: 'ingredients', label: 'Ingredients View', required: true },
   { id: 'loss', label: 'Known Loss Report', required: true },
 ];
 /** Tab ids from earlier builds, so shared links keep working. */
@@ -158,13 +158,16 @@ export function tabDefaultTime(tab: TabId): TimeSel {
     case 'itemcost':
     case 'ingredients':
       return { ...BASE_TIME, mode: 'rolling', rolling: 26 };
+    case 'loss':
+      // Directors and category managers read the Known Loss Report for the last full week.
+      return { ...BASE_TIME, mode: 'fiscal', grain: 'week', weekStart: weekStartDay(LAST_COMPLETE_WEEK) };
     default:
       return { ...BASE_TIME };
   }
 }
 
 export const DEFAULT_STATE: FilterState = {
-  tab: 'items',
+  tab: 'itemcost',
   time: null,
   dept: -1,
   cat: -1,

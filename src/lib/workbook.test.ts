@@ -753,3 +753,19 @@ describe('DSD items (receipts in Retalix HQ)', () => {
     }
   });
 });
+
+describe('prototype review feedback', () => {
+  it('tabs follow the agreed order, open on Item Cost Over Time, and the Known Loss Report defaults to the last full week', async () => {
+    const { TABS, tabDefaultTime } = await import('./filters');
+    expect(TABS.map((t) => t.label)).toEqual(['Item Cost Over Time', 'Category-Item Summary', 'Fresh Report', 'Ingredients View', 'Known Loss Report']);
+    expect(DEFAULT_STATE.tab).toBe('itemcost');
+    const r = resolveTime(tabDefaultTime('loss'));
+    expect(r.startWeek).toBe(LAST_COMPLETE_WEEK);
+    expect(r.endWeek).toBe(LAST_COMPLETE_WEEK);
+  });
+  it('chart axes show the week-beginning date instead of week numbers', async () => {
+    const { weekTick } = await import('./format');
+    expect(weekTick(LAST_COMPLETE_WEEK)).toBe('10/11/26');
+    expect(weekTick(globalWeek(2026, 1))).toBe('12/28/25');
+  });
+});

@@ -227,6 +227,8 @@ export function KnownLossReportView({ openDefinitions }: ViewProps) {
           </span>
         }
         question="Where does known loss come from, by item and by store, and which entries should IT remove?"
+        painPoint="High loss and data entry errors are found late, and removing them depends on emails to IT."
+        validate="Scope TBD (may move to a separate use case); High Loss Flag threshold basis, at cost assumed (open question 3)."
       >
         {describeProductScope(state)}, {describeStoreScope(state)}, {weeklyRange}: Known Loss <b>{moneyCompact(lossShown)}</b> {basisWord} on <b>{moneyCompact(total.gross)}</b> of sales, with{' '}
         <b>{count(flags.length)}</b> High Loss Flag{flags.length === 1 ? '' : 's'} (weekly loss above $1,000)
@@ -446,7 +448,7 @@ export function KnownLossReportView({ openDefinitions }: ViewProps) {
               <p className="side-sub">Item-store-weeks with known loss above $1,000, largest first · known loss at cost (threshold basis assumed at cost, pending validation){skuName ? ` · ${skuName}` : ''}</p>
             </div>
             <div className="side-buttons">
-              <ReportToItButton flags={skuFlags.filter(isEntryError)} label="Report all likely errors" />
+              <ReportToItButton flags={skuFlags.filter(isEntryError)} label="Add all likely errors to IT Review List" />
               <ExportButton
                 fileName="Flagged entries"
                 getSheet={() => ({

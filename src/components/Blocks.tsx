@@ -10,6 +10,8 @@ export function SectionHeading({
   question,
   children,
   badge,
+  painPoint,
+  validate,
 }: {
   eyebrow: string;
   title: string;
@@ -17,6 +19,10 @@ export function SectionHeading({
   children?: ReactNode;
   /** A chip next to the title (e.g. "Scope TBD"). */
   badge?: ReactNode;
+  /** The pain point from requirements collection that this view addresses. */
+  painPoint?: ReactNode;
+  /** Data sources or feasibility still to be confirmed for this view. */
+  validate?: ReactNode;
 }) {
   return (
     <section className="section-head" aria-labelledby="section-title">
@@ -26,6 +32,18 @@ export function SectionHeading({
         {badge && <span className="title-badge">{badge}</span>}
       </h2>
       <p className="section-question">{question}</p>
+      {painPoint && (
+        <p className="section-pain">
+          <span className="section-tag">Pain point addressed</span>
+          {painPoint}
+        </p>
+      )}
+      {validate && (
+        <p className="section-validate">
+          <span className="section-tag dashed">To validate</span>
+          {validate}
+        </p>
+      )}
       {children && <p className="section-narrative">{children}</p>}
     </section>
   );

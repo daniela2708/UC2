@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { fiscalOfWeek, LAST_COMPLETE_WEEK, weekOfDay } from '../data/calendar';
+import { LAST_COMPLETE_WEEK, weekOfDay } from '../data/calendar';
 import { COMPONENTS, DEPTS, ingredientUnitCost, ITEMS, type Item } from '../data/products';
 import { Banner, KeyFigures, SectionHeading, type Tile } from '../components/Blocks';
 import { ChartCard, SERIES, StackedBars } from '../components/Charts';
@@ -58,13 +58,12 @@ function IngredientsBody({
   const c = it.composite!;
   const w0 = weekOfDay(range.start);
   const w1 = Math.min(weekOfDay(range.end), LAST_COMPLETE_WEEK);
-  const fy = fiscalOfWeek(w1).fy;
   const sum = useMemo(() => ingredientsSummary(it, range.start, range.end), [it, range.start, range.end]);
   const weeks = useMemo(() => ingredientWeeks(it, w0, w1), [it, w0, w1]);
   const colorOf = (k: number) => SERIES[k % SERIES.length];
   const band = catBand(it.cat);
   const series = c.components.map((comp, k) => ({ key: comp.key, label: COMPONENTS[comp.key].name, color: colorOf(k) }));
-  const chartData = weeks.map((w) => ({ x: weekTick(w.week, fy), ...w.values }));
+  const chartData = weeks.map((w) => ({ x: weekTick(w.week), ...w.values }));
 
   // Where used: default to the recipe's most shared ingredient.
   const defaultKey = useMemo(() => [...c.components].sort((a, b) => pluUsing(b.key).length - pluUsing(a.key).length)[0].key, [c]);
@@ -110,7 +109,13 @@ function IngredientsBody({
 
   return (
     <>
-      <SectionHeading eyebrow="Recipe cost" title="Ingredients View" question="What does each ingredient add to this PLU’s cost, and what happens when a base ingredient changes?">
+      <SectionHeading
+        eyebrow="Recipe cost"
+        title="Ingredients View"
+        question="What does each ingredient add to this PLU’s cost, and what happens when a base ingredient changes?"
+        painPoint="No clear cost analytics for ingredient-based items: recipe costs are typed into Retalix HQ from Excel about once a year, and a change in a base ingredient does not reach the recipes that use it."
+        validate="Source of recipes and quantities (Pizza Ingredients.xlsx and the Deli recipe files) and of ingredient costs; the Gross Profit interpretation is pending validation."
+      >
         {it.name} ({it.code}), {range.label}: cost <b>{moneyUnit(sum.costPerUnit)}</b> per unit from {c.components.length} ingredients; the largest is{' '}
         <b>{[...sum.rows].sort((a, b) => b.contribution - a.contribution)[0].name}</b> at{' '}
         <b>{pct([...sum.rows].sort((a, b) => b.contribution - a.contribution)[0].share)}</b> of cost. Gross Profit <b>{pct(sum.grossProfitPct)}</b> on Gross Sales.

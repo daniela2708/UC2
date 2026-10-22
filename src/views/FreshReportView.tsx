@@ -8,7 +8,6 @@ import { Banner, BannerStack, KeyFigures, SectionHeading, type Tile } from '../c
 import { HierTable, type HierCol, type HierRow } from '../components/HierTable';
 import { C, ChartCard, ChartGrid, hbarHeight, HBars, rankSlice, TrendLines, type RankOrder } from '../components/Charts';
 import { ExportButton } from '../components/ExportButton';
-import { LossBasisControl } from '../components/LossBasis';
 import { CellBar, InfoTip, Var } from '../components/ui';
 import { describeProductScope, describeStoreScope } from '../lib/filters';
 import { actions } from '../lib/filterStore';
@@ -18,20 +17,17 @@ import {
   CHANNEL_LABEL,
   freshGpPct,
   grossMarginRate,
-  marginAfterLoss,
   sellThrough,
-  lossPctOfSales,
   pointsDiff,
   PURCHASE_CHANNELS,
   safeDiv,
-  totalLoss,
   totalPurchases,
   yoyGrowth,
   type MarginBase,
   type PurchaseBreakdown,
 } from '../lib/kpis';
-import { addBreakdown, freshStoreDays, freshStoreWeeks, storeCatLoss, trendWeeks, zeroBreakdown, type StoreWeekFresh } from '../lib/selectors';
-import { lossBasisWord, lossTitle, useScope, ViewToggles, type ViewProps } from './common';
+import { addBreakdown, freshStoreDays, freshStoreWeeks, trendWeeks, zeroBreakdown, type StoreWeekFresh } from '../lib/selectors';
+import { useScope, ViewToggles, type ViewProps } from './common';
 
 interface Node {
   sales: number;
@@ -45,7 +41,6 @@ interface Node {
   lySales: number;
   lyNet: number;
   lyPurchases: number;
-  loss: number;
   cogs: number;
   /** Period columns (weeks of the fiscal period, or days of the week in Day mode), plus the bucket before. */
   cols: { sales: number; purchases: number }[];
@@ -64,7 +59,6 @@ function emptyNode(n: number): Node {
     lySales: 0,
     lyNet: 0,
     lyPurchases: 0,
-    loss: 0,
     cogs: 0,
     cols: Array.from({ length: n }, () => ({ sales: 0, purchases: 0 })),
   };
@@ -82,7 +76,6 @@ function addNode(into: Node, n: Node): void {
   into.lySales += n.lySales;
   into.lyNet += n.lyNet;
   into.lyPurchases += n.lyPurchases;
-  into.loss += n.loss;
   into.cogs += n.cogs;
   n.cols.forEach((c, i) => {
     into.cols[i].sales += c.sales;
@@ -167,8 +160,6 @@ export function FreshReportView({ openDefinitions }: ViewProps) {
     const lyRows = lyBuckets.length ? fetch(lyBuckets) : null;
     const colRows = fetch(colKnown);
     const colIdx = new Map(colKnown.map((b, i) => [b, i]));
-    const lossRows = storeCatLoss(scope);
-    const lossScale = daily ? mainBuckets.length / 7 : 1;
     const storeNodes = new Map<number, Node>();
     for (const [s, row] of main) {
       const n = emptyNode(cols.length);
@@ -187,11 +178,6 @@ export function FreshReportView({ openDefinitions }: ViewProps) {
         n.cols[i].sales = cr[k].sales;
         n.cols[i].purchases = purchOf(cr[k]);
       });
-      const lossRow = lossRows.get(s);
-      if (lossRow)
-        lossRow.forEach((v, c) => {
-          if (depts.includes(CATS[c].dept)) n.loss += (totalLoss(v.loss, v.lossRetail, state.lossBasis) ?? 0) * lossScale;
-        });
       storeNodes.set(s, n);
     }
     const districtNodes = new Map<string, Node>();
@@ -206,7 +192,7 @@ export function FreshReportView({ openDefinitions }: ViewProps) {
       addNode(total, n);
     }
     return { total, regionNodes, districtNodes, storeNodes };
-  }, [scope, depts, daily, mainBuckets, colBuckets, range.lyAvailable, range.end, state.lossBasis]);
+  }, [scope, depts, daily, mainBuckets, colBuckets, range.lyAvailable, range.end]);
 
   // Store outliers: more than 5 pts below budget over the last 4 complete weeks combined, explained by DSD well above the norm.
   const outliers = useMemo(() => {
@@ -259,29 +245,13 @@ export function FreshReportView({ openDefinitions }: ViewProps) {
       }
       return { gp: grossMarginRate(sales - purch, sales, net, mb), budget: safeDiv(budget, sales) };
     };
-    const fy = fiscalOfWeek(tWeeks[tWeeks.length - 1]).fy;
     return tWeeks.map((w) => {
       const ty = sum(w);
       const ly = w >= 52 ? sum(w - 52) : null;
-      return { x: weekTick(w, fy), gp: ty?.gp ?? null, budget: ty?.budget ?? null, ly: ly?.gp ?? null };
+      return { x: weekTick(w), gp: ty?.gp ?? null, budget: ty?.budget ?? null, ly: ly?.gp ?? null };
     });
   }, [scope, depts, tWeeks, mb]);
 
-  // Expected-rate basis: the departments in scope, weighted by their sales over the range's complete weeks.
-  const expRate = useMemo(() => {
-    if (state.lossRateBasis !== 'expected') return null;
-    const weeks: number[] = [];
-    for (let w = range.startWeek; w <= range.endWeek; w++) weeks.push(w);
-    let num = 0;
-    let den = 0;
-    for (const d of depts) {
-      let sales = 0;
-      for (const row of freshStoreWeeks(scope, [d], weeks).values()) for (const c of row) sales += c.sales;
-      num += sales * (state.expLoss[DEPTS[d].name] ?? 0);
-      den += sales;
-    }
-    return den > 0 ? num / den : null;
-  }, [state.lossRateBasis, state.expLoss, depts, scope, range.startWeek, range.endWeek]);
   const colLabel = (b: number) => (daily ? formatDay(b).slice(0, 5) : `W${fiscalOfWeek(b).week}`);
   const groupLabel = daily ? 'Daily Gross Margin Rate (week)' : `Weekly Gross Margin Rate (P${fiscalOfWeek(range.endWeek).period})`;
   const columns: HierCol[] = [
@@ -289,13 +259,11 @@ export function FreshReportView({ openDefinitions }: ViewProps) {
     { key: 'net', label: 'Total Net Sales', title: 'Sales after discounts', group: 'Sales' },
     { key: 'arpu', label: 'Average Retail Price per Unit', title: 'Avg. Unit Retail in the Fresh Report: SUM(Gross Sales) ÷ SUM(Volume) within one unit of measure', group: 'Sales' },
     { key: 'vol', label: 'Total Volume', title: 'Units (ea) and weight (lb) sold; never added together', group: 'Sales' },
+    { key: 'purch', label: 'Total Purchases · Fresh Report', title: 'Fresh Report purchases: store-level purchase cost after trade rates by channel (Whse, DSD, Packaging, Reclaim, Transfers, In transit, Donations, WC credit, Scan credit). Not the same measure as item PO spend in the Category-Item Summary.', group: 'Cost' },
     { key: 'gm', label: 'Gross Margin $', title: 'Fresh Report gross profit: Gross Sales − Total Purchases', group: 'Margin' },
     { key: 'gmr', label: 'Gross Margin Rate', title: 'Fresh Report: (Gross Sales − Total Purchases) ÷ Gross Sales', group: 'Margin' },
-    { key: 'purch', label: 'Total Purchases · Fresh Report', title: 'Fresh Report purchases: store-level purchase cost after trade rates by channel (Whse, DSD, Packaging, Reclaim, Transfers, In transit, Donations, WC credit, Scan credit). Not the same measure as item PO spend in the Category-Item Summary.', group: 'Cost' },
-    { key: 'loss', label: `Total Loss ($) · ${lossBasisWord(state.lossBasis)}`, title: lossTitle(state.lossBasis), group: 'Loss' },
     { key: 'budget', label: 'Budget GP %', title: 'Fresh Report budget, weighted by sales', group: 'Budget' },
     { key: 'vsBudget', label: 'vs Budget', title: 'Fresh gross profit rate − Budget GP %, in points', group: 'Budget' },
-    { key: 'mal', label: 'Margin After Loss %', title: 'Proposed: Gross Margin Rate − loss rate (actual known loss or the expected rate)', group: 'Margin', defaultHidden: true },
     { key: 'shipU', label: 'Units shipped', title: 'Warehouse bill-out, estimated at average landed cost. Outside vendors (C&S, DSD) not included yet.', group: 'Sell-through', defaultHidden: true },
     { key: 'soldU', label: 'Units sold', group: 'Sell-through', defaultHidden: true },
     { key: 'st', label: 'Sell-through %', title: 'Units sold ÷ units shipped', group: 'Sell-through', defaultHidden: true },
@@ -329,10 +297,8 @@ export function FreshReportView({ openDefinitions }: ViewProps) {
       gm: money(gm),
       gmr: <CellBar value={gmr} max={0.7} text={pct(gmr)} />,
       purch: money(purch),
-      loss: money(n.loss),
       budget: pct(budget),
       vsBudget: <Var value={vsB} />,
-      mal: pct(marginAfterLoss(gmr, expRate ?? lossPctOfSales(n.loss, n.sales))),
       shipU: n.cogs > 0 ? volCell({ ...n, ea: (n.ea * n.purchases.whse) / n.cogs, lb: (n.lb * n.purchases.whse) / n.cogs }) : DASH,
       soldU: volCell(n),
       st: pct(sellThrough(n.cogs, n.purchases.whse)),
@@ -350,10 +316,8 @@ export function FreshReportView({ openDefinitions }: ViewProps) {
       gm,
       gmr,
       purch,
-      loss: n.loss,
       budget,
       vsBudget: vsB,
-      mal: marginAfterLoss(gmr, expRate ?? lossPctOfSales(n.loss, n.sales)),
       shipU: n.cogs > 0 ? ((n.ea + n.lb) * n.purchases.whse) / n.cogs : null,
       soldU: n.ea + n.lb,
       st: sellThrough(n.cogs, n.purchases.whse),
@@ -453,6 +417,12 @@ export function FreshReportView({ openDefinitions }: ViewProps) {
       two: true,
       sub: 'Each and pounds shown separately',
     },
+    {
+      label: 'Total Purchases',
+      info: 'Total purchase cost after trade rates: Whse + DSD + Packaging + Reclaim + Transfers + In transit + Donations + WC credit + Scan credit.',
+      value: moneyCompact(purch),
+      sub: 'Fresh Report purchases · C&S cases not included',
+    },
     { label: 'Gross Margin $', info: 'In the Fresh Report, gross margin is gross profit: Gross Sales − Total Purchases.', value: moneyCompact(gm), sub: 'Sales − Purchases (Fresh method)' },
     {
       label: 'Gross Margin Rate',
@@ -468,18 +438,6 @@ export function FreshReportView({ openDefinitions }: ViewProps) {
           budget {pct(budget)}
         </>
       ),
-    },
-    {
-      label: 'Total Purchases',
-      info: 'Total purchase cost after trade rates: Whse + DSD + Packaging + Reclaim + Transfers + In transit + Donations + WC credit + Scan credit.',
-      value: moneyCompact(purch),
-      sub: 'Fresh Report purchases · C&S cases not included',
-    },
-    {
-      label: 'Total Loss ($)',
-      info: `${lossTitle(state.lossBasis)} Likely entry errors are excluded by default.`,
-      value: moneyCompact(total.loss),
-      sub: `${pct(lossPctOfSales(total.loss, total.sales))} of sales · ${lossBasisWord(state.lossBasis)}${daily ? ' · weekly loss prorated' : ''}`,
     },
   ];
 
@@ -515,7 +473,13 @@ export function FreshReportView({ openDefinitions }: ViewProps) {
 
   return (
     <>
-      <SectionHeading eyebrow="Store profitability" title="Fresh Report" question="Which stores and districts are behind on fresh margin?">
+      <SectionHeading
+        eyebrow="Store profitability"
+        title="Fresh Report"
+        question="Which stores and districts are behind on fresh margin?"
+        painPoint="Store-level fresh gross profit comes from a manual Accounting Excel, with no view by region, district or store against budget."
+        validate="Gross Sales source, 1048 or Category Analyzer (open question 1); outside-vendor (C&S) and DSD cases are not fully in the source systems (open question 4)."
+      >
         {productLabel}, {rangeLabel}: Total Gross Sales <b>{moneyCompact(total.sales)}</b>, Total Purchases <b>{moneyCompact(purch)}</b>, Gross Margin Rate{' '}
         <b>{pct(gmr)}</b> (
         <b>
@@ -559,7 +523,7 @@ export function FreshReportView({ openDefinitions }: ViewProps) {
         </Banner>
       </BannerStack>
 
-      <ViewToggles loss margin />
+      <ViewToggles margin />
 
       <KeyFigures
         caption={`Key figures · ${productLabel} · ${describeStoreScope(state)} · ${range.fyLabel} · ${rangeLabel}`}
@@ -639,7 +603,6 @@ export function FreshReportView({ openDefinitions }: ViewProps) {
           </button>
           <InfoTip text="Gross Margin Rate for each week of the fiscal period (each day of the week in Day mode), with the change in points under each value." />
           <span className="filter-spacer" />
-          <LossBasisControl />
             </>
           }
           hierarchy="Region › District › Store Number"
@@ -653,7 +616,6 @@ export function FreshReportView({ openDefinitions }: ViewProps) {
           tableId="fresh"
           presets={[
             { label: 'Budget focus', keys: ['gross', 'gmr', 'purch', 'budget', 'vsBudget'] },
-            { label: 'Loss focus', keys: ['gross', 'gmr', 'loss', 'mal'] },
           ]}
         />
         <p className="card-caption" style={{ marginTop: 10 }}>

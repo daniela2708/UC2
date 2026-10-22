@@ -513,70 +513,7 @@ export function HBars({
   );
 }
 
-// ---------------------------------------------------------------- Waterfall
-
-export interface WaterfallStep {
-  label: string;
-  value: number;
-  kind: 'total' | 'minus';
-}
-
-export function Waterfall({
-  width,
-  height,
-  steps,
-  format,
-}: {
-  width?: number;
-  height?: number;
-  steps: WaterfallStep[];
-  format: (v: number) => string;
-}) {
-  let run = 0;
-  const data = steps.map((s) => {
-    if (s.kind === 'total') {
-      run = s.value;
-      return { label: s.label, base: 0, bar: s.value, value: s.value, kind: s.kind };
-    }
-    const top = run;
-    run -= s.value;
-    return { label: s.label, base: run, bar: top - run, value: -s.value, kind: s.kind };
-  });
-  return (
-    <BarChart width={width} height={height} data={data} margin={{ top: 22, right: 8, bottom: 0, left: 4 }} barCategoryGap="28%">
-      <XAxis dataKey="label" {...axisProps} interval={0} tick={{ fill: '#211e1e', fontSize: 11 }} />
-      <YAxis {...axisProps} width={52} tickFormatter={format} />
-      <Tooltip
-        cursor={{ fill: 'rgba(33,30,30,0.05)' }}
-        content={({ active, payload }) => {
-          if (!active || !payload?.length) return null;
-          const d = payload[0].payload as { label: string; value: number; kind: string };
-          return <TipBox title={d.label} rows={[{ label: d.kind === 'total' ? 'Amount' : 'Reduces margin by', value: format(Math.abs(d.value)), color: d.kind === 'total' ? C.s1 : C.s2 }]} />;
-        }}
-      />
-      <Bar dataKey="base" stackId="w" fill="transparent" isAnimationActive={false} />
-      <Bar dataKey="bar" stackId="w" radius={[4, 4, 0, 0]} maxBarSize={44} isAnimationActive={false}>
-        {data.map((d) => (
-          <Cell key={d.label} fill={d.kind === 'total' ? C.s1 : C.neg} />
-        ))}
-        <LabelList
-          dataKey="value"
-          content={(props) => {
-            const { x, y, width, value } = props as { x: number; y: number; width: number; value: number };
-            return (
-              <text x={x + width / 2} y={y - 6} fontSize={11.5} fontWeight={700} fill="#211e1e" textAnchor="middle">
-                {value < 0 ? '−' : ''}
-                {format(Math.abs(value))}
-              </text>
-            );
-          }}
-        />
-      </Bar>
-    </BarChart>
-  );
-}
-
-export const ChartGrid = ({ children, cols = 2 }: { children: ReactNode; cols?: 2 | 3 }) => <div className={`chart-grid cols-${cols}`}>{children}</div>;
+export const ChartGrid = ({ children, cols = 2 }: { children: ReactNode; cols?: 1 | 2 | 3 }) => <div className={`chart-grid cols-${cols}`}>{children}</div>;
 
 // ---------------------------------------------------------------- Cost over time: two stacked panels, one time axis
 
@@ -584,7 +521,7 @@ export interface CostQtyPoint {
   x: string;
   /** PO Cost / Unit for the bucket; null when nothing was bought (drawn as a gap). */
   cost: number | null;
-  /** Current PO Cost (HQ) in force in the bucket. */
+  /** PO Cost according to HQ in force in the bucket. */
   hq: number;
   retail: number | null;
   qty: number;
@@ -626,7 +563,7 @@ export function CostQtyPanels({
     const p = payload[0].payload as CostQtyPoint;
     const rows: TipRow[] = [
       { label: costLabel, value: p.cost === null ? 'No purchases (gap)' : fmtCost(p.cost), color: C.s1 },
-      { label: 'Current PO Cost (HQ)', value: fmtCost(p.hq), color: C.axis },
+      { label: 'PO Cost according to HQ', value: fmtCost(p.hq), color: C.axis },
     ];
     if (showRetail && p.retail !== null) rows.push({ label: 'Retail', value: fmtCost(p.retail), color: C.s3 });
     rows.push({ label: qtyLabel, value: fmtQty(p.qty), color: C.qty });

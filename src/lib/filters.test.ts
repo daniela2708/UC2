@@ -53,7 +53,7 @@ describe('URL state', () => {
   });
   it('ignores invalid, oversized and inconsistent parameters', () => {
     const s = fromQuery('tab=hack&dept=99&cat=0&sub=999&item=<script>&reg=7&dist=D99&st=999,abc&rd=5&rp=999999&cb=evil');
-    expect(s.tab).toBe('items');
+    expect(s.tab).toBe('itemcost');
     expect(s.dept).toBe(0);
     expect(s.sub).toBe(-1);
     expect(s.item).toBe(-1);

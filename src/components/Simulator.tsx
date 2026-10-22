@@ -144,7 +144,7 @@ function SimulatorModal({ item, onClose }: { item: number; onClose: () => void }
             ) : (
               <>
                 <label className="field-label" htmlFor="sim-cost">
-                  New cost per {unit} (prefilled with New PO Cost)
+                  New cost per {unit} (prefilled with the Real-time PO Cost)
                 </label>
                 <input id="sim-cost" className="text-input" inputMode="decimal" maxLength={9} value={newCostText} onChange={(e) => setNewCostText(e.target.value.slice(0, 9))} />
               </>

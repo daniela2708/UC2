@@ -109,13 +109,13 @@ export const KPI_DEFINITIONS: KpiDefinition[] = [
     id: 'purchase-cost-unit',
     name: 'Purchase Cost per Unit',
     unit: '$',
-    definition: 'Total Purchases divided by the volume purchased from PO data (units purchased, not units sold). Composite PLUs: production cost ÷ units produced. Shown within one unit of measure.',
+    definition: 'Total Purchases divided by the volume purchased from PO data (units purchased, not units sold). Composite PLUs: production cost ÷ units produced. Shown within one unit of measure. In Item Cost Over Time it is the Historical PO Cost: the weighted average PO cost for the filtered period. Removed from the Category-Item Summary table after the prototype review.',
     formula: 'SUM(Total Purchases) ÷ SUM(volume purchased)',
     source: BICEPS,
     reconciliation: 'Matches Biceps PO spend ÷ PO quantity for the same items and period.',
     status: 'Draft',
     priority: 'Must',
-    views: [CI, IC],
+    views: [IC],
     note: 'Same value for PLU and random-weight items under the current definitions (open question 5).',
   },
 
@@ -125,7 +125,7 @@ export const KPI_DEFINITIONS: KpiDefinition[] = [
     name: 'PO Cost / Unit',
     unit: '$',
     definition:
-      'Period-based weighted average (BCG proposal): total PO spend in the period ÷ volume purchased in the period, freight included. A period without purchases has no PO cost: a gap in charts and "—" in tables; Gross Margin and Total Net Cost then use the most recent PO cost, marked "cost from W38". "Current PO Cost" is the cost held today in Retalix HQ, Weis’s back-office system; "New PO Cost" is the PO cost of the last complete week (or the latest earlier week with purchases, marked "as of W41"). The same method feeds the PO cost source switch. Real-time cost comes from purchase orders in the ordering system (Biceps) and may change after invoice reconciliation.',
+      'Period-based weighted average (BCG proposal): total PO spend in the period ÷ volume purchased in the period, freight included. A period without purchases has no PO cost: a gap in charts and "—" in tables; Gross Margin and Total Net Cost then use the most recent PO cost, marked "cost from W38". "PO Cost according to HQ" is the cost held today in Retalix HQ, Weis’s back-office system; "Historical PO Cost" is the weighted average PO cost for the filtered period; "Real-time PO Cost" is the PO cost of the last complete week (or the latest earlier week with purchases, marked "as of W41"). Which cost per unit values are most useful is to be aligned with the business team. The same method feeds the PO cost source switch. Real-time cost comes from purchase orders in the ordering system (Biceps) and may change after invoice reconciliation.',
     formula: 'Σ PO spend in the period ÷ Σ volume purchased in the period (null when no volume)',
     source: `${BICEPS} · Retalix HQ`,
     reconciliation: 'PO lines tie to Biceps; HQ cost ties to Retalix HQ.',
@@ -216,7 +216,8 @@ export const KPI_DEFINITIONS: KpiDefinition[] = [
     reconciliation: 'Matches KL1011 department totals once flagged entries are reviewed.',
     status: 'Pending validation',
     priority: 'Must',
-    views: [CI, FR, KLR],
+    views: [CI, KLR],
+    note: 'Removed from the Fresh Report after the prototype review.',
   },
 
   {
@@ -234,7 +235,7 @@ export const KPI_DEFINITIONS: KpiDefinition[] = [
   },
   {
     id: 'it-review-list',
-    name: 'IT review list',
+    name: 'IT Review List',
     unit: 'list',
     definition: 'Flagged entries a category manager reports to IT for removal. Session only: no backend and no email; "Export list for IT" (CSV or Excel) is the hand-off.',
     formula: 'Columns: item, SKU Number, store, district, week, known loss units, UoM, known loss $, reason. Text values starting with =, +, -, @, tab or carriage return are prefixed with a single quote in the CSV.',
@@ -253,7 +254,7 @@ export const KPI_DEFINITIONS: KpiDefinition[] = [
       'Loss higher than $1,000 in a given week, for an item in a store. Threshold basis: at cost, assumed, Pending validation (open question 3): nobody has confirmed whether the current $1,000 rule is at cost or at retail, and the Recon Map points to KL1011 "Known Loss Retail $". Proposed refinement, shown only as a secondary label: "Likely entry error" (loss units above 20× the item-store typical weekly loss units, or above the $100,000 plausibility cap) or "High loss to review". An optional 26-week rule (loss also more than 100 % above the item-store 26-week average) is available in the Flag rules popover, off by default.',
     formula: 'Weekly known loss $ at cost (item × store × week) > 1,000. Exactly $1,000.00 is not flagged.',
     source: KL,
-    reconciliation: 'Category managers report likely entry errors to IT ("Report to IT", "Export list for IT") so they are removed from known loss.',
+    reconciliation: 'Category managers report likely entry errors to IT ("Add to IT Review List", "Export list for IT") so they are removed from known loss.',
     status: 'Pending validation',
     priority: 'Must',
     views: [CI, KLR],
@@ -335,7 +336,7 @@ KPI_DEFINITIONS.push(
     reconciliation: 'Matches the Deli team’s gross profit after expected loss.',
     status: 'Proposed',
     priority: 'Proposed',
-    views: [CI, FR],
+    views: [CI],
   },
   {
     id: 'sell-through',
@@ -438,7 +439,7 @@ export interface OpenQuestion {
 /** Open questions from the requirements workbook. */
 export const OPEN_QUESTIONS: OpenQuestion[] = [
   { id: 'q1', question: 'Source for Gross Sales in the Fresh Report: 1048 or Category Analyzer?', context: 'Affects Total Gross Sales and Gross Margin Rate in the Fresh Report.' },
-  { id: 'q2', question: 'Access to PO cost in Biceps, and how it links to Retalix HQ.', context: 'Needed for PO Cost / Unit, New PO Cost and the cost source switch.' },
+  { id: 'q2', question: 'Access to PO cost in Biceps, and how it links to Retalix HQ.', context: 'Needed for PO Cost / Unit, the Historical and Real-time PO Cost and the cost source switch.' },
   {
     id: 'q3',
     question: 'Threshold to flag high loss, for both data entry errors and high real loss.',
@@ -451,7 +452,7 @@ export const OPEN_QUESTIONS: OpenQuestion[] = [
   },  {
     id: 'q5',
     question: 'Are PO Cost / Unit and Purchase Cost per Unit the same KPI?',
-    context: 'Under the current definitions both are PO spend ÷ volume purchased, so they show the same value for PLU and random-weight items (they differ only for UPC and composite PLUs). PO Cost / Unit shows by default; Purchase Cost per Unit is in the column chooser.',
+    context: 'Under the current definitions both are PO spend ÷ volume purchased, so they show the same value for PLU and random-weight items (they differ only for UPC and composite PLUs). PO Cost / Unit shows in the Category-Item Summary; Purchase Cost per Unit shows as the Historical PO Cost in Item Cost Over Time.',
   },
 
 ];

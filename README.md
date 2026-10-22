@@ -36,15 +36,15 @@ The end-to-end check needs no extra packages: it drives a local Chrome or Chromi
 
 ## Views
 
-The tab bar holds the five views the workbook requires.
+The tab bar holds the five views the workbook requires, in the order agreed after the prototype review: the app opens on Item Cost Over Time. Each view's heading states the **pain point addressed** (from requirements collection) and what is still **to validate** (data sources or feasibility). Chart axes show the week-beginning date (for example 10/11/26).
 
 | View | What it answers | Drill-down |
 |---|---|---|
-| **Category-Item Summary** | Which items make money once cost and loss are counted? | Department › Category › Subcategory › SKU Number; click an item for its stores |
-| **Item Cost Over Time** | What does this item really cost us, and since when? One SKU at a time. | PO cost by week or fiscal period; purchase order lines |
-| **Ingredients View** | What does each ingredient add to a PLU's cost, and what happens when a base ingredient changes? | Ingredient table; "Where used" across every recipe |
+| **Item Cost Over Time** | No real-time cost for commoditized items. What does this item really cost us, and since when? One SKU at a time. | PO cost by week or fiscal period; purchase order lines |
+| **Category-Item Summary** | Which items make money once cost and loss are counted? | Department › Category › Subcategory › SKU Number; click an item for its store-level loss in the Known Loss Report |
 | **Fresh Report** | Which stores and districts are behind on fresh margin? | Region › District › Store Number |
-| **Known Loss Report** `Scope TBD` | Where does known loss come from, by item and store, and which entries should IT remove? | Department › Category › Item; one row per Store Num |
+| **Ingredients View** | No clear cost analytics for ingredient-based items. What does each ingredient add to a PLU's cost, and what happens when a base ingredient changes? | Ingredient table; "Where used" across every recipe |
+| **Known Loss Report** `Scope TBD` | Where does known loss come from, by item and store, and which entries should IT remove? Opens on the last full week. | Department › Category › Item; one row per Store Num |
 
 **Known Loss Report scope (TBD).** The team agreed that shrink may become a separate use case. The Known Loss Report may move to a separate use case or a later wave; the MVP focuses on item cost and ingredient costing. The High Loss Flag remains a required KPI in Category-Item Summary.
 
@@ -55,9 +55,9 @@ The tab bar holds the five views the workbook requires.
 | 1 | Category manager / director evaluates item performance with accurate costs tied to recipes | Gross Sales, Net Sales, PO Costs, Purchase Cost per Unit, Net Sales per Unit, Gross Margin ($ / %), Total Loss | To Date, Rolling, Department, Category, Subcategory, SKU Number | Category-Item Summary | Item-Day | Daily sales |
 | 2 | Real-time item cost for random-weight / PLU items, based on POs | PO Cost, PO Cost / Unit, Gross Sales, Gross Margin ($ / %) | To Date, Rolling, Department, Category, Subcategory, SKU Number | Item Cost Over Time; Category-Item Summary | Item-Day | Daily costs and sales |
 | 3 | Simple store-level gross profit from sales and purchases, accounting for loss | Gross Sales, Purchases, Gross Profit ($ / %) | To Date, Rolling, Department, Category | Fresh Report | Category-Day | Daily sales and purchases |
-| 4 | Review shrink impact on a category, spot fat-fingering errors and report them to IT for removal | Volume Sold, Sales ($), Known Loss (Units), Known Loss ($), High Loss Flag | Department, Category, Item, time | Known Loss Report (Report to IT, Export list for IT); Category-Item Summary | Item-Store-Week | Daily loss |
+| 4 | Review shrink impact on a category, spot fat-fingering errors and report them to IT for removal (Add to IT Review List) | Volume Sold, Sales ($), Known Loss (Units), Known Loss ($), High Loss Flag | Department, Category, Item, time | Known Loss Report (Report to IT, Export list for IT); Category-Item Summary | Item-Store-Week | Daily loss |
 | 5 | Store or district manager sees where loss comes from, by store, region and district, with high loss flagged | Known Loss (Units / $), High Loss Flag | Region, District, Store Num, Department, Category, SKU Number | Known Loss Report (store table); Category-Item Summary | Item-Store-Week | Daily loss |
-| 6 | Real-time cost of ingredient-based products; a change to a base ingredient flows to every recipe that uses it | Ingredient contribution, Cost / unit, Gross Profit ($ / %), Current and New PO Cost | Department, Category, PLU Number, time | Ingredients View ("Where used") | Item-Week | Daily PO cost |
+| 6 | Real-time cost of ingredient-based products; a change to a base ingredient flows to every recipe that uses it | Ingredient contribution, Cost / unit, Gross Profit ($ / %), PO Cost according to HQ and Real-time PO Cost | Department, Category, PLU Number, time | Ingredients View ("Where used") | Item-Week | Daily PO cost |
 
 ### Filters
 
@@ -75,7 +75,7 @@ The full state, including column choices and assumptions, lives in the URL query
 
 Every large table has a **Columns** chooser with groups (Sales, Cost, Margin, Loss, Sell-through, YoY), presets, *Show all* and *Workbook default*. Presets:
 - Category-Item Summary: *Loss focus*.
-- Fresh Report: *Budget focus* and *Loss focus*.
+- Fresh Report: *Budget focus*.
 
 Every large table also has a sticky hierarchy column and a pinned Total row. **Export to Excel always includes every column.**
 
@@ -84,7 +84,7 @@ Every large table also has a sticky hierarchy column and a pinned Total row. **E
 | Period-based PO Cost / Unit (`Cost period: Week \| Fiscal period`) | Item Cost Over Time, Category-Item Summary |
 | Cost source switch `PO (real-time) \| HQ (current)` with the margin change in pts | Category-Item Summary (Pending validation) |
 | Cost type (UPC, PLU, Random weight), Cost reliability, purchase source chip | Item rows, Cost type filter |
-| Margin After Loss % with `Loss basis: Actual known loss \| Expected rate` and editable expected rates (0–30 %) | Category-Item Summary, Fresh Report |
+| Margin After Loss % with `Loss basis: Actual known loss \| Expected rate` and editable expected rates (0–30 %) | Category-Item Summary |
 | Units shipped, Units sold, Sell-through %, Shipped value $ | Category-Item Summary, Fresh Report (column chooser) |
 | YoY and ID Stores YoY Gross / Net Sales growth | Column chooser and tile sub-lines |
 | Margin target bands (`src/data/targets.ts`) with a `Below target` chip | Category-Item Summary, Item Cost Over Time, Ingredients View, simulator |
@@ -102,12 +102,14 @@ Every formula lives in `src/lib/kpis.ts` (pure, typed, null-guarded) and uses th
   - **Production cost (recipe)** for composite PLUs: units produced × recipe cost; unknown loss is not included.
   - **DSD receipt (HQ)** for items received through direct store delivery and recorded item by item in Retalix HQ. DSD items add up exactly to each department's DSD purchases in the Fresh Report, by store and week.
   - **Fresh Report purchases**: the Fresh Report keeps its own store-level purchase channels. These are a different measure.
-- **Purchase Cost per Unit** = SUM(Total Purchases) ÷ SUM(volume purchased).
+- **Purchase Cost per Unit** = SUM(Total Purchases) ÷ SUM(volume purchased). In Item Cost Over Time it is the **Historical PO Cost**; it is no longer a Category-Item Summary column.
 - **PO Cost / Unit:**
   - **Period-based:** PO spend in the period ÷ volume purchased in the period. A period without purchases is a gap; margins then carry the latest PO cost and say so ("cost from W38").
   - It equals Purchase Cost per Unit for PLU and random-weight items (open question 5).
-  - **Current PO Cost** is the cost in Retalix HQ.
-  - **New PO Cost** is the last complete week's PO cost ("as of W41" when that week had no purchases).
+  - **PO Cost according to HQ** is the cost in Retalix HQ.
+  - **Historical PO Cost** is the weighted average PO cost for the filtered period.
+  - **Real-time PO Cost** is the last complete week's PO cost ("as of W41" when that week had no purchases).
+  - Item Cost Over Time shows the Gross Margin Rate at each of the three. Which cost per unit values are most useful is to align with the business team.
 - **Fresh Report Gross Margin** is gross profit: Gross Sales − Total Purchases.
 - **Ingredients View:**
   - Contribution = units per item × ingredient cost per unit.

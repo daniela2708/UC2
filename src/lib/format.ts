@@ -1,3 +1,4 @@
+import { formatDay, weekStartDay } from '../data/calendar';
 import type { Uom } from './kpis';
 
 /** Missing values (null denominators, no last-year history) render as an em dash. */
@@ -91,8 +92,8 @@ export function tone(n: N, invert = false): 'pos' | 'neg' | 'flat' {
 }
 
 /** Short fiscal week label for chart axes: "W12", or "FY25 W40" when it is not the latest year shown. */
-export function weekTick(w: number, latestFy: number): string {
-  const fy = 2024 + Math.floor(w / 52);
-  const wk = (w % 52) + 1;
-  return fy === latestFy ? `W${wk}` : `FY${String(fy).slice(2)} W${wk}`;
+/** Chart axis label for a fiscal week: its week-beginning date (Sunday), MM/DD/YY. */
+export function weekTick(w: number): string {
+  const [mm, dd, yyyy] = formatDay(weekStartDay(w)).split('/');
+  return `${mm}/${dd}/${yyyy.slice(2)}`;
 }

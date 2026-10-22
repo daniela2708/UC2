@@ -3,8 +3,8 @@ import { CATS, DEPTS, ITEMS, SUBS } from '../data/products';
 import { Banner, BannerStack, KeyFigures, SectionHeading, type Tile } from '../components/Blocks';
 import { HierTable, type HierCol, type HierRow } from '../components/HierTable';
 import { CellBar, FlagCell, InfoTip, Segmented, StatusChip, Var } from '../components/ui';
-import { C, ChartCard, ChartGrid, TrendLines, Waterfall } from '../components/Charts';
-import { describeProductScope, describeStoreScope } from '../lib/filters';
+import { C, ChartCard, ChartGrid, TrendLines } from '../components/Charts';
+import { describeProductScope, describeStoreScope, effectiveTime } from '../lib/filters';
 import { actions } from '../lib/filterStore';
 import { count, DASH, money, moneyCompact, moneyUnit, pct, pctChange, volume, volumeCompact, weekTick } from '../lib/format';
 import {
@@ -23,14 +23,12 @@ import {
   type LossBasis,
   type MarginBase,
 } from '../lib/kpis';
-import { addAgg, emptyAgg, findFlags, isEntryError, itemAggregates, itemStores, purchaseSource, trendWeeks, weeklyMargin, type Agg, type ItemAgg, type PurchaseSource } from '../lib/selectors';
+import { addAgg, emptyAgg, findFlags, isEntryError, itemAggregates, purchaseSource, trendWeeks, weeklyMargin, type Agg, type ItemAgg, type PurchaseSource } from '../lib/selectors';
 import { belowTarget, catBand, deptBand, type TargetBand } from '../data/targets';
-import { STORES } from '../data/stores';
 import { LAST_COMPLETE_WEEK } from '../data/calendar';
 import { RETAIL_LOSS_FACTOR } from '../data/generate';
 import { SimulateButton } from '../components/Simulator';
 import { FlagRulesButton } from '../components/FlagRules';
-import { ExportButton } from '../components/ExportButton';
 import { LossBasisControl } from '../components/LossBasis';
 import { fiscalOfWeek } from '../data/calendar';
 import { extremeInScope, goToExtreme, goToShrimp, lossBasisWord, lossTitle, P8_FY2026, shrimpStory, useScope, ViewToggles, type ViewProps } from './common';
@@ -61,13 +59,6 @@ function itemColumns(idStores: boolean, basis: LossBasis): HierCol[] {
       title:
         'PO cost spent (Biceps PO cost × volume). UPC: warehouse bill-out, shipments to stores used as a proxy for purchases. Composite PLUs: production cost (recipe) = units produced (sold + known loss) × recipe cost; unknown loss not included. DSD items: DSD receipts recorded in Retalix HQ, which add up to the department’s Fresh Report DSD purchases. Store filters take the stores’ share of the category.',
       group: 'Cost',
-    },
-    {
-      key: 'pcpu',
-      label: 'Purchase Cost per Unit',
-      title: `SUM(Total Purchases) ÷ SUM(volume purchased from PO data), within one unit of measure. ${SAME_KPI_NOTE}`,
-      group: 'Cost',
-      defaultHidden: true,
     },
     {
       key: 'po',
@@ -176,7 +167,6 @@ function aggCells(
   const mal = marginAfterLoss(gmr, lossRate);
   const nspu = perUnit(a, a.netEa, a.netLb);
   const arpu = perUnit(a, a.grossEa, a.grossLb);
-  const pcpu = perUnit(a, a.purchEa, a.purchLb, a.purchUnitsEa, a.purchUnitsLb);
   const po = perUnit(a, a.poEa, a.poLb, a.poUnitsEa, a.poUnitsLb);
   const sources = [
     a.srcPo ? `${count(a.srcPo)} Biceps PO` : '',
@@ -224,7 +214,6 @@ function aggCells(
       ),
       gmr: <CellBar value={gmr} max={0.75} text={pct(gmr)} band={band} />,
       purch: purchCell,
-      pcpu: pcpu.cell,
       po: po.cell,
       tnc: carried ? (
         <>
@@ -262,7 +251,6 @@ function aggCells(
       gm,
       gmr,
       purch: a.purch,
-      pcpu: pcpu.sort,
       po: po.sort,
       tnc: a.cost,
       ncu: ncu.sort,
@@ -295,7 +283,6 @@ export function CategoryItemView({ openDefinitions }: ViewProps) {
   const weekly = useMemo(() => weeklyMargin(scope, state.costBasis, weeks, state.costSource), [scope, state.costBasis, weeks, state.costSource]);
   const depts = useMemo(() => [...new Set(scope.items.map((i) => ITEMS[i].dept))], [scope.items]);
   const [belowOnly, setBelowOnly] = useState(false);
-  const [drillItem, setDrillItem] = useState<number | null>(null);
   const shown = useMemo(
     () =>
       belowOnly
@@ -303,7 +290,6 @@ export function CategoryItemView({ openDefinitions }: ViewProps) {
         : aggs,
     [aggs, belowOnly, mb],
   );
-  const drillRows = useMemo(() => (drillItem !== null && scope.itemMask[drillItem] ? itemStores(scope, drillItem) : []), [drillItem, scope]);
 
   const cellOpts: CellOpts = { basis, marginBase: mb, expectedLoss: null };
   const expFor = (d: number) => (state.lossRateBasis === 'expected' ? state.expLoss[DEPTS[d].name] ?? null : null);
@@ -364,8 +350,8 @@ export function CategoryItemView({ openDefinitions }: ViewProps) {
         ) : undefined,
         ...c,
         extra: <SimulateButton item={a.item} />,
-        onSelect: () => setDrillItem((x) => (x === a.item ? null : a.item)),
-        selected: drillItem === a.item,
+        // The item's store-level loss lives in the Known Loss Report (store table filtered to this SKU).
+        onSelect: () => update((st) => ({ ...actions.item(a.item)(st), tab: 'loss', time: effectiveTime(st) })),
         drill: { label: `Open ${it.name} in Item Cost Over Time`, onClick: () => update((s) => ({ ...s, icItem: a.item, tab: 'itemcost' })) },
       };
     };
@@ -398,7 +384,7 @@ export function CategoryItemView({ openDefinitions }: ViewProps) {
     const totalExp = state.lossRateBasis === 'expected' && total.gross > 0 ? expNum / total.gross : null;
     return { total, rows, staleCount, totalExp };
     // eslint-disable-next-line react-hooks/exhaustive-deps -- cellOpts and expFor derive from basis, mb and the loss-rate state listed here
-  }, [shown, basis, mb, update, drillItem, state.lossRateBasis, state.expLoss]);
+  }, [shown, basis, mb, update, state.lossRateBasis, state.expLoss]);
 
   const gm = grossMargin(total.net, total.cost);
   const gmr = grossMarginRate(gm, total.gross, total.net, mb);
@@ -486,27 +472,24 @@ export function CategoryItemView({ openDefinitions }: ViewProps) {
   const seafoodInScope = depts.includes(DEPTS.findIndex((d) => d.name === 'Seafood')) && range.endWeek >= P8_FY2026;
   const extreme = extremeInScope(scope);
 
-  const latestFy = fiscalOfWeek(weeks[weeks.length - 1]).fy;
   const trendData = weekly.map((p) => ({
-    x: weekTick(p.week, latestFy),
+    x: weekTick(p.week),
     ty: grossMarginRate(p.net - p.cost, p.gross, p.net, mb),
     ly: p.lyNet !== null && p.lyCost !== null ? grossMarginRate(p.lyNet - p.lyCost, p.lyGross, p.lyNet, mb) : null,
   }));
-  const bridge = [
-    { label: 'Sales', value: total.gross, kind: 'total' as const },
-    { label: 'Discounts', value: total.gross - total.net, kind: 'minus' as const },
-    { label: 'Cost', value: total.cost, kind: 'minus' as const },
-    { label: 'Margin', value: gm ?? 0, kind: 'total' as const },
-    { label: 'Loss', value: loss ?? 0, kind: 'minus' as const },
-    { label: 'After loss', value: (gm ?? 0) - (loss ?? 0), kind: 'total' as const },
-  ];
 
   const toggleCost = (e: CostElement) =>
     update((s) => ({ ...s, costBasis: s.costBasis.includes(e) ? s.costBasis.filter((x) => x !== e) : [...s.costBasis, e] }));
 
   return (
     <>
-      <SectionHeading eyebrow="Item profitability" title="Category-Item Summary" question="Which items make money once cost and loss are counted?">
+      <SectionHeading
+        eyebrow="Item profitability"
+        title="Category-Item Summary"
+        question="Which items make money once cost and loss are counted?"
+        painPoint="No single view of item profitability with accurate cost: today’s margins use the cost in Retalix HQ and do not show purchases or loss by item."
+        validate="PO cost depends on Biceps access; cost basis (allowances), margin on Gross vs Net Sales and loss at cost vs retail are pending validation."
+      >
         {describeProductScope(state)}, {range.label}: Total Gross Sales <b>{moneyCompact(total.gross)}</b>, Gross Margin Rate <b>{pct(gmr)}</b>
         {ly && (
           <>
@@ -573,10 +556,10 @@ export function CategoryItemView({ openDefinitions }: ViewProps) {
         }
       />
 
-      <ChartGrid cols={2}>
+      <ChartGrid cols={1}>
         <ChartCard
           title="Gross Margin Rate by week"
-          subtitle={`On ${baseWord} · this year vs same fiscal weeks last year · ${weekTick(weeks[0], latestFy)}–${weekTick(weeks[weeks.length - 1], latestFy)}`}
+          subtitle={`On ${baseWord} · this year vs same fiscal weeks last year · ${weekTick(weeks[0])}–${weekTick(weeks[weeks.length - 1])}`}
           legend={[
             { label: 'This year', color: C.s1 },
             { label: 'Last year', color: C.ly },
@@ -592,17 +575,6 @@ export function CategoryItemView({ openDefinitions }: ViewProps) {
             format={(v) => pct(v)}
             tickFormat={(v) => `${(v * 100).toFixed(1)}%`}
           />
-        </ChartCard>
-        <ChartCard
-          title="From sales to margin after loss"
-          subtitle={`Where each sales dollar goes · ${range.label}`}
-          legend={[
-            { label: 'Totals', color: C.s1, kind: 'rect' },
-            { label: 'Reductions', color: C.neg, kind: 'rect' },
-          ]}
-          table={{ head: ['Step', 'Amount'], rows: bridge.map((b) => [b.label, (b.kind === 'minus' ? '−' : '') + money(b.value)]) }}
-        >
-          <Waterfall steps={bridge} format={(v) => moneyCompact(v)} />
         </ChartCard>
       </ChartGrid>
 
@@ -646,55 +618,6 @@ export function CategoryItemView({ openDefinitions }: ViewProps) {
           total={{ id: 'total', label: 'Total', ...aggCells(total, { ...cellOpts, expectedLoss: totalExp }, total.highFlags ? <FlagCell flags={total.highFlags} errors={total.errFlags} /> : '') }}
           rows={rows}
         />
-        {drillItem !== null && (
-          <div className="store-drill" aria-label="Stores for the selected item">
-            <div className="side-actions">
-              <div>
-                <h3 className="side-title">Stores · {ITEMS[drillItem].name}</h3>
-                <p className="side-sub">
-                  {range.label} · units sold, units scanned out (known loss) and Total Loss ($) by store, largest loss first
-                </p>
-              </div>
-              <ExportButton
-                fileName={`Stores ${ITEMS[drillItem].name}`}
-                getSheet={() => ({
-                  title: `Stores · ${ITEMS[drillItem].name} (${ITEMS[drillItem].code})`,
-                  subtitle: range.label,
-                  head: ['Store', 'District', 'Units sold', 'Units scanned out', 'Total Loss ($)', 'High Loss Flag', 'Likely entry errors (proposed label)'],
-                  rows: drillRows.map((r) => [STORES[r.store].code, STORES[r.store].district, Math.round(r.unitsSold), Math.round(r.unitsScannedOut), Math.round(r.loss * 100) / 100, r.errFlags + r.reviewFlags, r.errFlags]),
-                })}
-              />
-            </div>
-            <div className="po-scroll">
-              <table className="mini-table">
-                <thead>
-                  <tr>
-                    <th className="left">Store</th>
-                    <th>Units sold</th>
-                    <th>Units scanned out</th>
-                    <th>Total Loss ($)</th>
-                    <th>High Loss Flag</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {drillRows.slice(0, 200).map((r) => (
-                    <tr key={r.store} className={r.errFlags ? 'is-hot' : undefined}>
-                      <td className="left">
-                        Store {STORES[r.store].code} <span className="code-tag">{STORES[r.store].district}</span>
-                      </td>
-                      <td>{volume(r.unitsSold, ITEMS[drillItem].uom)}</td>
-                      <td>{volume(r.unitsScannedOut, ITEMS[drillItem].uom)}</td>
-                      <td>{money(r.loss)}</td>
-                      <td>
-                        <FlagCell flags={r.errFlags + r.reviewFlags} errors={r.errFlags} />
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </div>
-        )}
       </section>
     </>
   );
