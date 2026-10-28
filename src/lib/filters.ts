@@ -210,7 +210,15 @@ export function unusedFilters(tab: TabId): { time?: string; product?: string; sk
 }
 
 export function effectiveTime(s: FilterState): TimeSel {
-  return s.time ?? tabDefaultTime(s.tab);
+  const t = s.time ?? tabDefaultTime(s.tab);
+  return s.tab === 'fresh' ? weeklyTime(t) : t;
+}
+
+/** The Fresh Report is weekly (accounting postings): a Day selection falls back to Period-to-Date or to the week that holds the day. */
+export function weeklyTime(t: TimeSel): TimeSel {
+  if (t.mode === 'todate' && t.toDate === 'day') return { ...t, toDate: 'ptd' };
+  if (t.mode === 'fiscal' && t.grain === 'day') return { ...t, grain: 'week', weekStart: snapToSunday(clampDay(t.day)) };
+  return t;
 }
 
 // ---------------------------------------------------------------- Time resolution

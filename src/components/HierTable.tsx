@@ -3,7 +3,7 @@ import { Fragment, useEffect, useMemo, useRef, useState, type ReactNode } from '
 import { useFilters } from '../lib/filterStore';
 import { ExportButton, nodeText } from './ExportButton';
 
-export type ColGroup = 'Sales' | 'Cost' | 'Margin' | 'Loss' | 'Sell-through' | 'YoY' | 'Budget' | 'Period';
+export type ColGroup = 'Sales' | 'Cost' | 'Margin' | 'Loss' | 'YoY' | 'Budget' | 'Period';
 
 export interface HierCol {
   key: string;
@@ -253,7 +253,7 @@ export function HierTable({
   );
 }
 
-const GROUP_ORDER: ColGroup[] = ['Sales', 'Cost', 'Margin', 'Loss', 'Sell-through', 'YoY', 'Budget', 'Period'];
+const GROUP_ORDER: ColGroup[] = ['Sales', 'Cost', 'Margin', 'Loss', 'YoY', 'Budget', 'Period'];
 
 /** Column chooser popover: checkboxes by group, plus Reset to default. */
 function ColumnChooser({

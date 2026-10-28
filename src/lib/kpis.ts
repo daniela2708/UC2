@@ -238,9 +238,9 @@ export interface LossRule {
 /** Workbook: High Loss Flag = loss higher than $1,000 in a given week. The 26-week rule is a proposed refinement, off by default. */
 export const DEFAULT_LOSS_RULE: LossRule = { dollars: 1000, pct: 1, avg: false };
 
-/** Threshold basis of the $1,000 flag: assumed at cost until Weis confirms (open question 3). */
+/** Threshold basis of the $1,000 flag: assumed at cost until Weis confirms (not yet in the workbook tracker). */
 export const FLAG_BASIS_NOTE =
-  'Threshold basis: at cost, assumed, Pending validation. Nobody has confirmed whether the current $1,000 rule is at cost or at retail, and the workbook Recon Map points to KL1011 "Known Loss Retail $" (open question 3).';
+  'Threshold basis: at cost, assumed, Pending validation (not yet in the tracker). Nobody has confirmed whether the current $1,000 rule is at cost or at retail, and the workbook Recon Map points to KL1011 "Known Loss Retail $".';
 export const HIGH_LOSS_FLAG_TIP = `High Loss Flag (workbook): known loss higher than $1,000 for an item in a store in a given week. ${FLAG_BASIS_NOTE} Reason labels are proposed.`;
 export const LOSS_RULE_LIMITS = { dollars: { min: 250, max: 100_000 }, pct: { min: 0, max: 10 } } as const;
 
@@ -406,14 +406,6 @@ export function clampExpectedLoss(raw: unknown): number | null {
 export function marginAfterLoss(gmRate: Num, lossRate: Num): number | null {
   if (!ok(gmRate) || !ok(lossRate)) return null;
   return gmRate - lossRate;
-}
-
-// ---------------------------------------------------------------- Shipments vs sales (Proposed)
-
-/** Sell-through % = units sold ÷ units shipped (warehouse bill-out). */
-export function sellThrough(unitsSold: Num, unitsShipped: Num): number | null {
-  if (typeof unitsShipped === 'number' && unitsShipped < 0) return null;
-  return safeDiv(unitsSold, unitsShipped);
 }
 
 // ---------------------------------------------------------------- New items watch

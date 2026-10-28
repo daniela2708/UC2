@@ -117,16 +117,18 @@ export function FilterCard() {
   const t = effectiveTime(state);
   const range = resolveTime(t);
   const timeOff = unused.time;
+  // The Fresh Report is weekly: no Current Day or Day options.
+  const weeklyOnly = state.tab === 'fresh';
   const setTime = (patch: Parameters<typeof actions.time>[0]) => update(actions.time(patch));
 
   const periodOptions = (() => {
     switch (t.mode) {
       case 'todate':
-        return (Object.keys(TO_DATE_LABEL) as ToDateOpt[]).map((k) => ({ value: k, label: TO_DATE_LABEL[k] }));
+        return (Object.keys(TO_DATE_LABEL) as ToDateOpt[]).filter((k) => !(weeklyOnly && k === 'day')).map((k) => ({ value: k, label: TO_DATE_LABEL[k] }));
       case 'rolling':
         return ROLLING_OPTS.map((n) => ({ value: String(n), label: `${n}-week rolling` }));
       case 'fiscal':
-        return (Object.keys(GRAIN_LABEL) as FiscalGrain[]).map((k) => ({ value: k, label: GRAIN_LABEL[k] }));
+        return (Object.keys(GRAIN_LABEL) as FiscalGrain[]).filter((k) => !(weeklyOnly && k === 'day')).map((k) => ({ value: k, label: GRAIN_LABEL[k] }));
       default:
         return [];
     }

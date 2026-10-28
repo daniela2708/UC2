@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import { formatDay, globalWeek, weekStartDay } from '../data/calendar';
+import { formatDay, globalWeek, isoFromDay, weekStartDay } from '../data/calendar';
 import { ITEMS } from '../data/products';
-import { DEFAULT_STATE, fromQuery, resolveTime, sanitizeSearch, searchItems, storeIndices, toQuery, BASE_TIME } from './filters';
+import { DEFAULT_STATE, effectiveTime, fromQuery, resolveTime, sanitizeSearch, searchItems, storeIndices, toQuery, BASE_TIME } from './filters';
 import { buildScope, findFlags, itemAggregates, shrinkAggregates, storeCatLoss } from './selectors';
 
 const W42_TIME = { ...BASE_TIME, mode: 'fiscal' as const, grain: 'week' as const, weekStart: weekStartDay(globalWeek(2026, 42)) };
@@ -63,6 +63,24 @@ describe('URL state', () => {
     expect(s.rule.dollars).toBe(250);
     expect(s.costBasis).toEqual([]);
     expect(fromQuery('x='.padEnd(5000, 'a'))).toEqual(DEFAULT_STATE);
+  });
+  it('the Fresh Report has no Day mode: old day links fall back to weeks', () => {
+    const cur = effectiveTime(fromQuery('tab=fresh&tm=todate&td=day'));
+    expect(cur.toDate).toBe('ptd');
+    expect(resolveTime(cur).isDaily).toBe(false);
+    const day = weekStartDay(globalWeek(2026, 38)) + 3;
+    const fiscal = effectiveTime(fromQuery(`tab=fresh&tm=fiscal&fg=day&dy=${isoFromDay(day)}`));
+    expect(fiscal.grain).toBe('week');
+    expect(fiscal.weekStart).toBe(weekStartDay(globalWeek(2026, 38)));
+    expect(resolveTime(fiscal).end - resolveTime(fiscal).start).toBe(6);
+    // Out-of-range or malformed days are clamped or ignored, never thrown.
+    for (const q of ['tab=fresh&tm=fiscal&fg=day&dy=1900-01-01', 'tab=fresh&tm=fiscal&fg=day&dy=9999-99-99', 'tab=fresh&tm=fiscal&fg=day&dy=<x>']) {
+      const t = effectiveTime(fromQuery(q));
+      expect(t.grain).toBe('week');
+      expect(() => resolveTime(t)).not.toThrow();
+    }
+    // Other views keep the Day option.
+    expect(effectiveTime(fromQuery('tab=loss&tm=todate&td=day')).toDate).toBe('day');
   });
 });
 

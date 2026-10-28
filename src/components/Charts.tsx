@@ -521,7 +521,7 @@ export interface CostQtyPoint {
   x: string;
   /** PO Cost / Unit for the bucket; null when nothing was bought (drawn as a gap). */
   cost: number | null;
-  /** PO Cost according to HQ in force in the bucket. */
+  /** HQ Average Cost in force in the bucket. */
   hq: number;
   retail: number | null;
   qty: number;
@@ -563,7 +563,7 @@ export function CostQtyPanels({
     const p = payload[0].payload as CostQtyPoint;
     const rows: TipRow[] = [
       { label: costLabel, value: p.cost === null ? 'No purchases (gap)' : fmtCost(p.cost), color: C.s1 },
-      { label: 'PO Cost according to HQ', value: fmtCost(p.hq), color: C.axis },
+      { label: 'HQ Average Cost', value: fmtCost(p.hq), color: C.axis },
     ];
     if (showRetail && p.retail !== null) rows.push({ label: 'Retail', value: fmtCost(p.retail), color: C.s3 });
     rows.push({ label: qtyLabel, value: fmtQty(p.qty), color: C.qty });

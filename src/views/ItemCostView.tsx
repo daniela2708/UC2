@@ -128,10 +128,12 @@ function ItemCostBody({
 
   const tiles: Tile[] = [
     {
-      label: 'PO Cost according to HQ',
-      info: 'The per-unit cost held today in Retalix HQ (Weis’s back-office system), which Power BI uses.',
+      label: 'HQ Average Cost',
+      info: produced
+        ? 'The recipe cost held in Retalix HQ (Weis’s back-office system), typed in from the recipe Excel about once a year.'
+        : 'The average cost in Retalix HQ (Weis’s back-office system), which Power BI uses: calculated in Biceps and refreshed several times a day, deals and trade rates included.',
       value: moneyUnit(current),
-      sub: `Retalix HQ · updated ${sup.hqUpdatedLabel}${it.costType === 'UPC' ? ' · average cost' : ''}`,
+      sub: produced ? `Retalix HQ · updated ${sup.hqUpdatedLabel}` : 'Retalix HQ · average cost',
     },
     {
       label: 'Historical PO Cost',
@@ -155,7 +157,7 @@ function ItemCostBody({
     },
     {
       label: 'Cost change',
-      info: 'Real-time PO Cost − PO Cost according to HQ, in $ and %.',
+      info: 'Real-time PO Cost − HQ Average Cost, in $ and %.',
       value: <Var value={change.pct} kind="pct" invert />,
       sub: change.abs === null ? '—' : `${change.abs >= 0 ? '+' : '−'}${moneyUnit(Math.abs(change.abs))} per ${unit} vs HQ`,
     },
@@ -166,8 +168,8 @@ function ItemCostBody({
       sub: produced ? 'Sold + known loss' : it.dsd ? `${moneyCompact(spend)} DSD receipts (Retalix HQ)` : `${moneyCompact(spend)} PO spend · ${sup.caseLabel}`,
     },
     {
-      label: 'GM Rate · HQ cost',
-      info: 'Gross Margin Rate at the PO Cost according to HQ: 1 − cost ÷ average retail (last 4 weeks). Target band is Proposed.',
+      label: 'GM Rate · HQ average cost',
+      info: 'Gross Margin Rate at the HQ Average Cost: 1 − cost ÷ average retail (last 4 weeks). Target band is Proposed.',
       value: pct(gmCurrent),
       sub: (
         <>
@@ -182,7 +184,7 @@ function ItemCostBody({
       value: pct(gmHistorical),
       sub: (
         <>
-          <Var value={pointsDiff(gmHistorical, gmCurrent)} /> vs HQ cost
+          <Var value={pointsDiff(gmHistorical, gmCurrent)} /> vs HQ average cost
           {below(gmHistorical)}
         </>
       ),
@@ -193,7 +195,7 @@ function ItemCostBody({
       value: pct(gmNew),
       sub: (
         <>
-          <Var value={pointsDiff(gmNew, gmCurrent)} /> vs HQ cost
+          <Var value={pointsDiff(gmNew, gmCurrent)} /> vs HQ average cost
           {below(gmNew)}
         </>
       ),
@@ -211,10 +213,10 @@ function ItemCostBody({
         eyebrow="Item cost"
         title="Item Cost Over Time"
         question="What does this item really cost us, and since when?"
-        painPoint="No real-time cost for commoditized items: PLU and random-weight items are costed in Retalix HQ with a default updated a few times a year, while the real cost changes every week on purchase orders."
-        validate="Access to PO cost in Biceps and its link to Retalix HQ (open question 2); the period-based PO cost method and which cost per unit values are most useful, to align with the business team."
+        painPoint="No cost trend for commoditized items: the HQ Average Cost is an end-of-day blend per SKU (deals included), not the cost on each receipt, with no PLU roll-up, no trend view and no DSD items; composite PLU costs are typed from Excel about once a year."
+        validate="No direct Biceps connection: PO cost would come from the daily Biceps extract to SQL Server (location to confirm) or the existing Snowflake feed, and purchase orders live only in Biceps (#1, #12). HQ Average Cost vs PO cost, and at which grain, is a pending business decision (#3, #32)."
       >
-        {it.name} ({it.code}), {range.label}: PO Cost according to HQ <b>{moneyUnit(current)}</b> / {unit}, Historical PO Cost <b>{moneyUnit(historical)}</b> for the
+        {it.name} ({it.code}), {range.label}: HQ Average Cost <b>{moneyUnit(current)}</b> / {unit}, Historical PO Cost <b>{moneyUnit(historical)}</b> for the
         period, Real-time PO Cost <b>{moneyUnit(next)}</b> (
         <b>
           <Var value={change.pct} kind="pct" invert />
@@ -258,8 +260,8 @@ function ItemCostBody({
       ) : (
         it.costType === 'UPC' && (
           <Banner kind="note">
-            UPC items use the average cost in Retalix HQ, which already works; real-time PO cost matters for PLU and random-weight items. Purchases are warehouse bill-out
-            (shipments to stores).
+            UPC items use the HQ Average Cost, which already works; real-time PO cost matters for PLU and random-weight items. The source of UPC purchases is pending
+            (open question 5).
           </Banner>
         )
       )}
@@ -269,7 +271,7 @@ function ItemCostBody({
         tiles={tiles}
         note={
           <>
-            PO Cost according to HQ is the cost in Retalix HQ; Historical PO Cost is the weighted average of purchase orders in the filtered period; Real-time PO Cost is the last complete week. Which cost per unit values are most useful is to align with the business team.{' '}
+            HQ Average Cost is the average cost in Retalix HQ; Historical PO Cost is the weighted average of purchase orders in the filtered period; Real-time PO Cost is the last complete week. Which cost per unit values are most useful is to align with the business team.{' '}
             <button type="button" className="btn-link" onClick={() => openDefinitions('po-cost')}>
               See definitions
             </button>
@@ -292,16 +294,16 @@ function ItemCostBody({
 
       <ChartCard
         title="Item Cost Over Time"
-        subtitle={`By ${bucket.toLowerCase()} · ${costLabel} ${produced ? '' : it.dsd ? '(DSD receipts in Retalix HQ ÷ volume received) ' : '(PO spend ÷ volume purchased, incl. freight) '}· dashed line = PO Cost according to HQ${gaps ? ` · ${gaps} ${period === 'week' ? 'week' : 'period'}${gaps > 1 ? 's' : ''} without purchases shown as gaps` : ''} · ${qtyLabel.toLowerCase()} below`}
+        subtitle={`By ${bucket.toLowerCase()} · ${costLabel} ${produced ? '' : it.dsd ? '(DSD receipts in Retalix HQ ÷ volume received) ' : '(PO spend ÷ volume purchased, incl. freight) '}· dashed line = HQ Average Cost${gaps ? ` · ${gaps} ${period === 'week' ? 'week' : 'period'}${gaps > 1 ? 's' : ''} without purchases shown as gaps` : ''} · ${qtyLabel.toLowerCase()} below`}
         height={400}
         legend={[
           { label: costLabel, color: C.s1 },
-          { label: 'PO Cost according to HQ', color: C.axis },
+          { label: 'HQ Average Cost', color: C.axis },
           ...(showRetail ? [{ label: 'Retail', color: C.s3 }] : []),
           { label: qtyLabel, color: C.qty, kind: 'rect' as const },
         ]}
         table={{
-          head: [bucket, costLabel, 'PO Cost according to HQ', 'Retail', qtyLabel, produced ? 'Production cost' : 'PO spend'],
+          head: [bucket, costLabel, 'HQ Average Cost', 'Retail', qtyLabel, produced ? 'Production cost' : 'PO spend'],
           rows: chartData.map((d, n) => [d.x, d.cost === null ? '—' : moneyUnit(d.cost), moneyUnit(d.hq), moneyUnit(d.retail), Math.round(d.qty), moneyCompact(series[n].spend)]),
         }}
       >

@@ -114,7 +114,7 @@ function IngredientsBody({
         title="Ingredients View"
         question="What does each ingredient add to this PLU’s cost, and what happens when a base ingredient changes?"
         painPoint="No clear cost analytics for ingredient-based items: recipe costs are typed into Retalix HQ from Excel about once a year, and a change in a base ingredient does not reach the recipes that use it."
-        validate="Source of recipes and quantities (Pizza Ingredients.xlsx and the Deli recipe files) and of ingredient costs; the Gross Profit interpretation is pending validation."
+        validate="How recipes are maintained is pending: a standardized Excel in a secured SharePoint landing zone or Power Apps, and IT is checking for an existing component repository (#10). Writing recipe costs back to HQ stays manual and out of scope (#36)."
       >
         {it.name} ({it.code}), {range.label}: cost <b>{moneyUnit(sum.costPerUnit)}</b> per unit from {c.components.length} ingredients; the largest is{' '}
         <b>{[...sum.rows].sort((a, b) => b.contribution - a.contribution)[0].name}</b> at{' '}

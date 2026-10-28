@@ -228,7 +228,7 @@ export function KnownLossReportView({ openDefinitions }: ViewProps) {
         }
         question="Where does known loss come from, by item and by store, and which entries should IT remove?"
         painPoint="High loss and data entry errors are found late, and removing them depends on emails to IT."
-        validate="Scope TBD (may move to a separate use case); High Loss Flag threshold basis, at cost assumed (open question 3)."
+        validate="Scope TBD, may move to a separate use case (#9). The source of truth for loss, KL1011 or Ops 300, blocks the build (#16), and where the SQL for the $1,000 rule lives is unknown (#26)."
       >
         {describeProductScope(state)}, {describeStoreScope(state)}, {weeklyRange}: Known Loss <b>{moneyCompact(lossShown)}</b> {basisWord} on <b>{moneyCompact(total.gross)}</b> of sales, with{' '}
         <b>{count(flags.length)}</b> High Loss Flag{flags.length === 1 ? '' : 's'} (weekly loss above $1,000)
@@ -271,8 +271,8 @@ export function KnownLossReportView({ openDefinitions }: ViewProps) {
         tiles={tiles}
         note={
           <>
-            High Loss Flag: known loss higher than $1,000 for an item in a store in a given week. Threshold basis: at cost, assumed{' '}
-            <StatusChip status="Pending validation" /> (open question 3).{' '}
+            High Loss Flag: known loss higher than $1,000 for an item in a store in a given week (open question 2). Threshold basis: at cost, assumed{' '}
+            <StatusChip status="Pending validation" /> (not yet in the tracker).{' '}
             <button type="button" className="btn-link" onClick={() => openDefinitions('high-loss-flag')}>
               See definitions
             </button>

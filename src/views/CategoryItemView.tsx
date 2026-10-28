@@ -18,7 +18,6 @@ import {
   yoyGrowth,
   type CostElement,
   marginAfterLoss,
-  sellThrough,
   HIGH_LOSS_FLAG_TIP,
   type LossBasis,
   type MarginBase,
@@ -41,8 +40,6 @@ const COST_LABEL: Record<CostElement, string> = {
   freight: 'Freight billed separately',
 };
 
-const SAME_KPI_NOTE = 'Same value for PLU and random-weight items under the current definitions (open question 5).';
-
 function itemColumns(idStores: boolean, basis: LossBasis): HierCol[] {
   const yoy = idStores ? 'ID Stores YoY' : 'YoY';
   return [
@@ -57,13 +54,13 @@ function itemColumns(idStores: boolean, basis: LossBasis): HierCol[] {
       key: 'purch',
       label: 'Total Purchases',
       title:
-        'PO cost spent (Biceps PO cost × volume). UPC: warehouse bill-out, shipments to stores used as a proxy for purchases. Composite PLUs: production cost (recipe) = units produced (sold + known loss) × recipe cost; unknown loss not included. DSD items: DSD receipts recorded in Retalix HQ, which add up to the department’s Fresh Report DSD purchases. Store filters take the stores’ share of the category.',
+        'PO cost spent (Biceps PO cost × volume). UPC: source pending (open question 5). Composite PLUs: production cost (recipe) = units produced (sold + known loss) × recipe cost; unknown loss not included. DSD items: DSD receipts recorded in Retalix HQ, which add up to the department’s Fresh Report DSD purchases. Store filters take the stores’ share of the category.',
       group: 'Cost',
     },
     {
       key: 'po',
       label: 'PO Cost / Unit',
-      title: `Period-based (Proposed): PO spend in the period ÷ volume purchased in the period. "—" when nothing was bought; margins then use the most recent PO cost ("cost from W38"). UPC: average cost; composite PLUs: recipe cost. ${SAME_KPI_NOTE}`,
+      title: `Period-based (Proposed): PO spend in the period ÷ volume purchased in the period. "—" when nothing was bought; margins then use the most recent PO cost ("cost from W38"). UPC: average cost; composite PLUs: recipe cost.`,
       group: 'Cost',
     },
     { key: 'tnc', label: 'Total Net Cost', title: 'Cost of units sold under the selected cost basis', group: 'Cost' },
@@ -74,10 +71,6 @@ function itemColumns(idStores: boolean, basis: LossBasis): HierCol[] {
     { key: 'rel', label: 'Cost reliability', title: 'UPC: average cost is reliable. PLU and random weight: under review.', group: 'Cost', defaultHidden: true, left: true },
     { key: 'mal', label: 'Margin After Loss %', title: 'Proposed: Gross Margin Rate − loss rate (actual known loss or the expected rate)', group: 'Margin', defaultHidden: true },
     { key: 'gmLy', label: 'GM Rate vs LY', title: 'Gross Margin Rate − same fiscal weeks last year', group: 'Margin', defaultHidden: true },
-    { key: 'shipU', label: 'Units shipped', title: 'Warehouse bill-out. Outside vendors (C&S, DSD) not included yet.', group: 'Sell-through', defaultHidden: true },
-    { key: 'soldU', label: 'Units sold', group: 'Sell-through', defaultHidden: true },
-    { key: 'st', label: 'Sell-through %', title: 'Units sold ÷ units shipped', group: 'Sell-through', defaultHidden: true },
-    { key: 'shipV', label: 'Shipped value $', title: 'Warehouse bill-out value', group: 'Sell-through', defaultHidden: true },
     { key: 'lyG', label: 'Last Year Gross Sales', group: 'YoY', defaultHidden: true },
     { key: 'yoyG', label: `${yoy} Gross Sales Growth $`, group: 'YoY', defaultHidden: true },
     { key: 'yoyGp', label: `${yoy} Gross Sales Growth %`, group: 'YoY', defaultHidden: true },
@@ -141,7 +134,7 @@ interface CellOpts {
 
 const SOURCE_TIP: Record<PurchaseSource, string> = {
   'Biceps PO': 'PO cost spent, from PO cost and volume in Biceps.',
-  'Warehouse bill-out': 'Bill-out is shipments to stores from the Weis distribution center, used as a proxy for purchases (UPC items have no Biceps PO).',
+  'Source pending (open question 5)': 'UPC items have no Biceps PO; the source of their purchases is pending (open question 5).',
   Recipe: 'Production cost (recipe): units produced (sold + known loss) × recipe cost. Unknown loss is not included.',
   'DSD receipt (HQ)':
     'Received through DSD (direct store delivery) and recorded item by item in Retalix HQ, at the receipt cost. DSD items add up to the department’s DSD purchases in the Fresh Report.',
@@ -170,7 +163,7 @@ function aggCells(
   const po = perUnit(a, a.poEa, a.poLb, a.poUnitsEa, a.poUnitsLb);
   const sources = [
     a.srcPo ? `${count(a.srcPo)} Biceps PO` : '',
-    a.srcBill ? `${count(a.srcBill)} warehouse bill-out` : '',
+    a.srcPending ? `${count(a.srcPending)} source pending (open question 5)` : '',
     a.srcRecipe ? `${count(a.srcRecipe)} recipe` : '',
     a.srcDsd ? `${count(a.srcDsd)} DSD receipt (HQ)` : '',
   ].filter(Boolean);
@@ -185,7 +178,7 @@ function aggCells(
     ) : sources.length > 1 ? (
       <>
         {money(a.purch)}
-        <span className="cell-sub" title={`Mixed sources: ${sources.join(' · ')}. ${SOURCE_TIP['Warehouse bill-out']}`}>
+        <span className="cell-sub" title={`Mixed sources: ${sources.join(' · ')}.`}>
           Mixed sources
         </span>
       </>
@@ -194,7 +187,6 @@ function aggCells(
     );
   const carried = o.costFrom !== undefined && o.costFrom >= 0 ? <span className="cell-sub amber" title="No purchases in some weeks of the range: margin uses the most recent PO cost">cost from W{fiscalOfWeek(o.costFrom).week}</span> : null;
   const ncu = perUnit(a, a.costEa, a.costLb);
-  const st = sellThrough(a.ea + a.lb, a.shipEa + a.shipLb);
   const yg = yoyGrowth(a.gross, a.lyGross);
   const yn = yoyGrowth(a.net, a.lyNet);
   return {
@@ -230,10 +222,6 @@ function aggCells(
       flag: flags,
       mal: pct(mal),
       gmLy: <Var value={pointsDiff(gmr, lyGmr)} />,
-      shipU: twoVolumes(a.shipEa, a.shipLb, uom),
-      soldU: twoVolumes(a.ea, a.lb, uom),
-      st: uom ? pct(st) : <span title="Mixed units: sell-through is shown within one unit of measure">{pct(st)}</span>,
-      shipV: money(a.shipVal),
       lyG: money(a.lyGross),
       yoyG: signedMoney(yg.abs),
       yoyGp: <Var value={yg.pct} kind="pct" />,
@@ -260,10 +248,6 @@ function aggCells(
       flag: a.highFlags,
       mal,
       gmLy: pointsDiff(gmr, lyGmr),
-      shipU: a.shipEa + a.shipLb,
-      soldU: a.ea + a.lb,
-      st,
-      shipV: a.shipVal,
       lyG: a.lyGross,
       yoyG: yg.abs,
       yoyGp: yg.pct,
@@ -441,16 +425,16 @@ export function CategoryItemView({ openDefinitions }: ViewProps) {
     },
     {
       label: 'Total Purchases',
-      info: 'PO cost spent (Biceps). UPC: warehouse bill-out (shipments to stores, a proxy for purchases). Composite PLUs: production cost (recipe), unknown loss not included. DSD items: receipts recorded in Retalix HQ.',
+      info: 'PO cost spent (Biceps). UPC: source pending (open question 5). Composite PLUs: production cost (recipe), unknown loss not included. DSD items: receipts recorded in Retalix HQ.',
       value: moneyCompact(total.purch),
       sub: (() => {
-        const n = [total.srcPo, total.srcBill, total.srcRecipe, total.srcDsd].filter((x) => x > 0).length;
+        const n = [total.srcPo, total.srcPending, total.srcRecipe, total.srcDsd].filter((x) => x > 0).length;
         return n > 1
-          ? 'Mixed sources: Biceps PO, bill-out, recipe, DSD'
+          ? 'Mixed sources: Biceps PO, source pending, recipe, DSD'
           : total.srcRecipe
             ? 'Production cost (recipe)'
-            : total.srcBill
-              ? 'Warehouse bill-out'
+            : total.srcPending
+              ? 'Source pending (open question 5)'
               : total.srcDsd
                 ? 'DSD receipt (HQ)'
                 : 'Biceps PO';
@@ -487,8 +471,8 @@ export function CategoryItemView({ openDefinitions }: ViewProps) {
         eyebrow="Item profitability"
         title="Category-Item Summary"
         question="Which items make money once cost and loss are counted?"
-        painPoint="No single view of item profitability with accurate cost: today’s margins use the cost in Retalix HQ and do not show purchases or loss by item."
-        validate="PO cost depends on Biceps access; cost basis (allowances), margin on Gross vs Net Sales and loss at cost vs retail are pending validation."
+        painPoint="No single view of item profitability: today’s margins do not show purchases or loss by item, and the HQ Average Cost is per SKU, with no PLU roll-up or trend."
+        validate="No direct Biceps connection: PO cost would come from the daily Biceps extract to SQL Server (location to confirm) or the existing Snowflake feed, and HQ Average Cost vs PO cost is a pending business decision (#1, #3, #32). How Total Purchases are built is pending (#5)."
       >
         {describeProductScope(state)}, {range.label}: Total Gross Sales <b>{moneyCompact(total.gross)}</b>, Gross Margin Rate <b>{pct(gmr)}</b>
         {ly && (
@@ -532,11 +516,11 @@ export function CategoryItemView({ openDefinitions }: ViewProps) {
             onChange={(v) => update((s) => ({ ...s, costSource: v }))}
             options={[
               { value: 'po', label: 'PO (real-time)' },
-              { value: 'hq', label: 'HQ (current)' },
+              { value: 'hq', label: 'HQ average' },
             ]}
           />
           <StatusChip status="Pending validation" />
-          <InfoTip text="PLU and random-weight items: PO = real-time cost from purchase orders (Biceps), freight included; HQ = the default cost in Retalix HQ, Weis’s back-office system. UPC items always use the HQ average cost, which already works. Biceps access is an open question." />
+          <InfoTip text="PLU and random-weight items: PO = real-time cost from purchase orders (Biceps), freight included; HQ = the HQ Average Cost in Retalix HQ, Weis’s back-office system, calculated in Biceps and refreshed several times a day, deals and trade rates included. UPC items always use the HQ Average Cost. Access to PO cost in Biceps is open question 1." />
           <span className="flip-delta">
             On {state.costSource === 'po' ? 'HQ' : 'PO'} cost: {pct(altGmr)} (<Var value={pointsDiff(altGmr, gmr)} />)
           </span>

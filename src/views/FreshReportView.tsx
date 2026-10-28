@@ -17,7 +17,6 @@ import {
   CHANNEL_LABEL,
   freshGpPct,
   grossMarginRate,
-  sellThrough,
   pointsDiff,
   PURCHASE_CHANNELS,
   safeDiv,
@@ -26,7 +25,7 @@ import {
   type MarginBase,
   type PurchaseBreakdown,
 } from '../lib/kpis';
-import { addBreakdown, freshStoreDays, freshStoreWeeks, trendWeeks, zeroBreakdown, type StoreWeekFresh } from '../lib/selectors';
+import { addBreakdown, freshStoreWeeks, trendWeeks, zeroBreakdown, type StoreWeekFresh } from '../lib/selectors';
 import { useScope, ViewToggles, type ViewProps } from './common';
 
 interface Node {
@@ -42,7 +41,7 @@ interface Node {
   lyNet: number;
   lyPurchases: number;
   cogs: number;
-  /** Period columns (weeks of the fiscal period, or days of the week in Day mode), plus the bucket before. */
+  /** Period columns (weeks of the fiscal period), plus the week before. */
   cols: { sales: number; purchases: number }[];
 }
 
@@ -132,30 +131,22 @@ export function FreshReportView({ openDefinitions }: ViewProps) {
   const depts = useMemo(() => (state.cat >= 0 ? [CATS[state.cat].dept] : state.dept >= 0 ? [state.dept] : DEPTS.map((d) => d.idx)), [state.cat, state.dept]);
   const [selected, setSelected] = useState<string>('total');
   const [showCols, setShowCols] = useState(false);
-  const daily = range.end - range.start + 1 < 7;
 
-  // Main figures: complete weeks, or the exact days in Day mode.
+  // Main figures: complete weeks (the Fresh Report is weekly; there is no Day mode).
   const mainBuckets = useMemo(() => {
     const out: number[] = [];
-    if (daily) for (let d = range.start; d <= range.end; d++) out.push(d);
-    else for (let w = range.startWeek; w <= range.endWeek; w++) out.push(w);
+    for (let w = range.startWeek; w <= range.endWeek; w++) out.push(w);
     return out;
-  }, [daily, range.start, range.end, range.startWeek, range.endWeek]);
-  // Collapsible columns: the fiscal period's weeks, or in Day mode the days of the week (each with the change vs the bucket before).
-  const colBuckets = useMemo(() => {
-    if (daily) {
-      const ws = weekStartDay(Math.floor(range.end / 7));
-      return Array.from({ length: 7 }, (_, k) => ws + k);
-    }
-    return periodWeeksOf(range.endWeek);
-  }, [daily, range.end, range.endWeek]);
+  }, [range.startWeek, range.endWeek]);
+  // Collapsible columns: the fiscal period's weeks (each with the change vs the week before).
+  const colBuckets = useMemo(() => periodWeeksOf(range.endWeek), [range.endWeek]);
 
   const { total, regionNodes, districtNodes, storeNodes } = useMemo(() => {
-    const lyBuckets = range.lyAvailable ? mainBuckets.map((b) => b - (daily ? 364 : 52)).filter((b) => b >= 0) : [];
+    const lyBuckets = range.lyAvailable ? mainBuckets.map((b) => b - 52).filter((b) => b >= 0) : [];
     const cols = [colBuckets[0] - 1, ...colBuckets];
-    const known = (b: number) => b >= 0 && (daily ? b <= range.end : b <= LAST_COMPLETE_WEEK);
+    const known = (b: number) => b >= 0 && b <= LAST_COMPLETE_WEEK;
     const colKnown = cols.filter(known);
-    const fetch = (buckets: number[]) => (daily ? freshStoreDays(scope, depts, buckets) : freshStoreWeeks(scope, depts, buckets));
+    const fetch = (buckets: number[]) => freshStoreWeeks(scope, depts, buckets);
     const main = fetch(mainBuckets);
     const lyRows = lyBuckets.length ? fetch(lyBuckets) : null;
     const colRows = fetch(colKnown);
@@ -192,7 +183,7 @@ export function FreshReportView({ openDefinitions }: ViewProps) {
       addNode(total, n);
     }
     return { total, regionNodes, districtNodes, storeNodes };
-  }, [scope, depts, daily, mainBuckets, colBuckets, range.lyAvailable, range.end]);
+  }, [scope, depts, mainBuckets, colBuckets, range.lyAvailable]);
 
   // Store outliers: more than 5 pts below budget over the last 4 complete weeks combined, explained by DSD well above the norm.
   const outliers = useMemo(() => {
@@ -252,8 +243,8 @@ export function FreshReportView({ openDefinitions }: ViewProps) {
     });
   }, [scope, depts, tWeeks, mb]);
 
-  const colLabel = (b: number) => (daily ? formatDay(b).slice(0, 5) : `W${fiscalOfWeek(b).week}`);
-  const groupLabel = daily ? 'Daily Gross Margin Rate (week)' : `Weekly Gross Margin Rate (P${fiscalOfWeek(range.endWeek).period})`;
+  const colLabel = (b: number) => `W${fiscalOfWeek(b).week}`;
+  const groupLabel = `Weekly Gross Margin Rate (P${fiscalOfWeek(range.endWeek).period})`;
   const columns: HierCol[] = [
     { key: 'gross', label: 'Total Gross Sales', title: 'Sales prior to discounts', group: 'Sales' },
     { key: 'net', label: 'Total Net Sales', title: 'Sales after discounts', group: 'Sales' },
@@ -264,10 +255,6 @@ export function FreshReportView({ openDefinitions }: ViewProps) {
     { key: 'gmr', label: 'Gross Margin Rate', title: 'Fresh Report: (Gross Sales − Total Purchases) ÷ Gross Sales', group: 'Margin' },
     { key: 'budget', label: 'Budget GP %', title: 'Fresh Report budget, weighted by sales', group: 'Budget' },
     { key: 'vsBudget', label: 'vs Budget', title: 'Fresh gross profit rate − Budget GP %, in points', group: 'Budget' },
-    { key: 'shipU', label: 'Units shipped', title: 'Warehouse bill-out, estimated at average landed cost. Outside vendors (C&S, DSD) not included yet.', group: 'Sell-through', defaultHidden: true },
-    { key: 'soldU', label: 'Units sold', group: 'Sell-through', defaultHidden: true },
-    { key: 'st', label: 'Sell-through %', title: 'Units sold ÷ units shipped', group: 'Sell-through', defaultHidden: true },
-    { key: 'shipV', label: 'Shipped value $', title: 'Warehouse (Whse) purchases', group: 'Sell-through', defaultHidden: true },
     { key: 'lyG', label: 'Last Year Gross Sales', group: 'YoY', defaultHidden: true },
     { key: 'yoyGp', label: `${state.idStores ? 'ID Stores YoY' : 'YoY'} Gross Sales Growth %`, group: 'YoY', defaultHidden: true },
     { key: 'lyN', label: 'Last Year Net Sales', group: 'YoY', defaultHidden: true },
@@ -276,7 +263,7 @@ export function FreshReportView({ openDefinitions }: ViewProps) {
       ? colBuckets.map((b, i) => ({
           key: `c${i}`,
           label: colLabel(b),
-          title: daily ? formatDay(b) : `${formatDay(weekStartDay(b))} – ${formatDay(weekEndDay(b))}`,
+          title: `${formatDay(weekStartDay(b))} – ${formatDay(weekEndDay(b))}`,
           group: 'Period' as const,
         }))
       : []),
@@ -299,10 +286,6 @@ export function FreshReportView({ openDefinitions }: ViewProps) {
       purch: money(purch),
       budget: pct(budget),
       vsBudget: <Var value={vsB} />,
-      shipU: n.cogs > 0 ? volCell({ ...n, ea: (n.ea * n.purchases.whse) / n.cogs, lb: (n.lb * n.purchases.whse) / n.cogs }) : DASH,
-      soldU: volCell(n),
-      st: pct(sellThrough(n.cogs, n.purchases.whse)),
-      shipV: money(n.purchases.whse),
       lyG: money(n.lySales),
       yoyGp: <Var value={yoyGrowth(n.sales, n.lySales).pct} kind="pct" />,
       lyN: money(n.lyNet),
@@ -318,10 +301,6 @@ export function FreshReportView({ openDefinitions }: ViewProps) {
       purch,
       budget,
       vsBudget: vsB,
-      shipU: n.cogs > 0 ? ((n.ea + n.lb) * n.purchases.whse) / n.cogs : null,
-      soldU: n.ea + n.lb,
-      st: sellThrough(n.cogs, n.purchases.whse),
-      shipV: n.purchases.whse,
       lyG: n.lySales,
       yoyGp: yoyGrowth(n.sales, n.lySales).pct,
       lyN: n.lyNet,
@@ -332,11 +311,11 @@ export function FreshReportView({ openDefinitions }: ViewProps) {
         const cur = n.cols[i + 1];
         const prev = n.cols[i];
         const g = freshGpPct(cur.sales, cur.purchases);
-        const future = daily ? b > range.end : b > LAST_COMPLETE_WEEK;
+        const future = b > LAST_COMPLETE_WEEK;
         cells[`c${i}`] = future ? (
           <span className="flat">
             {DASH}
-            <span className="cell-sub">{!daily && b === CURRENT_WEEK ? 'In progress' : 'Not yet'}</span>
+            <span className="cell-sub">{b === CURRENT_WEEK ? 'In progress' : 'Not yet'}</span>
           </span>
         ) : (
           <>
@@ -392,7 +371,7 @@ export function FreshReportView({ openDefinitions }: ViewProps) {
   const lyGmr = grossMarginRate(total.lySales - total.lyPurchases, total.lySales, total.lyNet, mb);
   const budget = budgetGpPct(total.budget, total.sales);
   const productLabel = describeProductScope({ ...state, item: -1 });
-  const rangeLabel = daily ? range.label : `${formatDay(weekStartDay(range.startWeek))} – ${formatDay(weekEndDay(range.endWeek))}`;
+  const rangeLabel = `${formatDay(weekStartDay(range.startWeek))} – ${formatDay(weekEndDay(range.endWeek))}`;
   const baseWord = mb === 'gross' ? 'Gross Sales' : 'Net Sales';
   const ly = range.lyAvailable;
   const yoySub = (ty: number, lyv: number) => (
@@ -478,7 +457,7 @@ export function FreshReportView({ openDefinitions }: ViewProps) {
         title="Fresh Report"
         question="Which stores and districts are behind on fresh margin?"
         painPoint="Store-level fresh gross profit comes from a manual Accounting Excel, with no view by region, district or store against budget."
-        validate="Gross Sales source, 1048 or Category Analyzer (open question 1); outside-vendor (C&S) and DSD cases are not fully in the source systems (open question 4)."
+        validate="Available on Thursdays, once the week’s accounting postings are complete; the Workday accounting source must be confirmed as in migration scope (#5). Gross Sales basis and source for the Fresh Report (#17); outside-vendor (C&S) and DSD receipt flows (#6)."
       >
         {productLabel}, {rangeLabel}: Total Gross Sales <b>{moneyCompact(total.sales)}</b>, Total Purchases <b>{moneyCompact(purch)}</b>, Gross Margin Rate{' '}
         <b>{pct(gmr)}</b> (
@@ -538,12 +517,6 @@ export function FreshReportView({ openDefinitions }: ViewProps) {
         }
       />
 
-      {daily && (
-        <Banner kind="note">
-          Daily gross profit swings because purchases do not line up with sales: deliveries arrive 2–3 times a week. Read it by week or period to date.
-        </Banner>
-      )}
-
       <ChartGrid cols={2}>
         <ChartCard
           title="Gross Margin Rate by week"
@@ -601,7 +574,7 @@ export function FreshReportView({ openDefinitions }: ViewProps) {
             {showCols ? <ChevronDown size={14} aria-hidden="true" /> : <ChevronRight size={14} aria-hidden="true" />}
             {groupLabel}
           </button>
-          <InfoTip text="Gross Margin Rate for each week of the fiscal period (each day of the week in Day mode), with the change in points under each value." />
+          <InfoTip text="Gross Margin Rate for each week of the fiscal period, with the change in points under each value." />
           <span className="filter-spacer" />
             </>
           }

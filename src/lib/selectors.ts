@@ -316,7 +316,7 @@ export interface Agg {
   poLb: number;
   poUnitsEa: number;
   poUnitsLb: number;
-  /** Total Purchases: PO spend (Biceps); UPC: warehouse bill-out; composite PLUs: production cost (recipe). */
+  /** Total Purchases: PO spend (Biceps); UPC: source pending (open question 5); composite PLUs: production cost (recipe). */
   purch: number;
   purchEa: number;
   purchLb: number;
@@ -331,13 +331,9 @@ export interface Agg {
   /** Volume purchased (UPC: shipped; composite PLUs: produced = sold + known loss), by unit of measure. */
   purchUnitsEa: number;
   purchUnitsLb: number;
-  /** Warehouse bill-out: value and units shipped. Outside vendors (C&S, DSD) not included. */
-  shipVal: number;
-  shipEa: number;
-  shipLb: number;
-  /** Items whose Total Purchases come from Biceps POs, warehouse bill-out or the recipe (to note mixed sources). */
+  /** Items whose Total Purchases come from Biceps POs, a pending source (UPC) or the recipe (to note mixed sources). */
   srcPo: number;
-  srcBill: number;
+  srcPending: number;
   srcRecipe: number;
   srcDsd: number;
 }
@@ -379,11 +375,8 @@ export function emptyAgg(): Agg {
     errFlags: 0,
     purchUnitsEa: 0,
     purchUnitsLb: 0,
-    shipVal: 0,
-    shipEa: 0,
-    shipLb: 0,
     srcPo: 0,
-    srcBill: 0,
+    srcPending: 0,
     srcRecipe: 0,
     srcDsd: 0,
   };
@@ -407,15 +400,15 @@ export interface ItemAgg extends Agg {
 }
 
 /** Where an item's Total Purchases come from. */
-export type PurchaseSource = 'Biceps PO' | 'Warehouse bill-out' | 'Recipe' | 'DSD receipt (HQ)';
+export type PurchaseSource = 'Biceps PO' | 'Source pending (open question 5)' | 'Recipe' | 'DSD receipt (HQ)';
 export function purchaseSource(i: number): PurchaseSource {
   const it = ITEMS[i];
-  return it.dsd ? 'DSD receipt (HQ)' : it.composite ? 'Recipe' : it.costType === 'UPC' ? 'Warehouse bill-out' : 'Biceps PO';
+  return it.dsd ? 'DSD receipt (HQ)' : it.composite ? 'Recipe' : it.costType === 'UPC' ? 'Source pending (open question 5)' : 'Biceps PO';
 }
 
 /**
  * Unit cost parts of one item-week. The base cost comes from the cost source: real-time PO cost (landed, freight
- * included, so "freight billed separately" adds nothing) or the HQ default cost. UPC items use the HQ average cost.
+ * included, so "freight billed separately" adds nothing) or the HQ Average Cost. UPC items always use the HQ Average Cost.
  */
 function costParts(m: Model, i: number, w: number, source: CostSource = 'po') {
   const it = ITEMS[i];
@@ -454,9 +447,6 @@ export function itemAggregates(scope: Scope, costBasis: readonly CostElement[], 
     const adj = lossAdjustments(scope, lw0, lw1);
     const lyAdj = r.lyAvailable ? lossAdjustments(scope, lw0 - 52, lw1 - 52) : new Map<number, number>();
     const flags = findFlags(scope, lw0, lw1);
-    const purchWeeks: number[] = [];
-    for (let w = lw0; w <= lw1; w++) purchWeeks.push(w);
-    const { whse: Rw } = itemPurchaseFactor(scope, purchWeeks);
     const flagCount = new Map<number, number>();
     const errCount = new Map<number, number>();
     for (const f of flags) {
@@ -532,9 +522,6 @@ export function itemAggregates(scope: Scope, costBasis: readonly CostElement[], 
             const fromReceipts = it.dsd || !(it.composite || it.costType === 'UPC');
             const poNum = fromReceipts ? purch : units * poUnit;
             const poDen = fromReceipts ? purchUnits : units;
-            const ship = wk <= LAST_COMPLETE_WEEK ? itemPurchasesWeek(Rw, i, wk) * frac : 0;
-            const shipUnits = poUnit > 0 ? ship / poUnit : 0;
-            a.shipVal += ship;
             a.gross += gross;
             a.net += net;
             a.cost += units * unitCost;
@@ -554,7 +541,6 @@ export function itemAggregates(scope: Scope, costBasis: readonly CostElement[], 
               a.purchEa += purch;
               a.lossUnitsEa += lu;
               a.purchUnitsEa += purchUnits;
-              a.shipEa += shipUnits;
             } else {
               a.lb += units;
               a.grossLb += gross;
@@ -565,7 +551,6 @@ export function itemAggregates(scope: Scope, costBasis: readonly CostElement[], 
               a.purchLb += purch;
               a.lossUnitsLb += lu;
               a.purchUnitsLb += purchUnits;
-              a.shipLb += shipUnits;
             }
           }
         }
@@ -575,7 +560,7 @@ export function itemAggregates(scope: Scope, costBasis: readonly CostElement[], 
       const src = purchaseSource(i);
       if (src === 'DSD receipt (HQ)') a.srcDsd = 1;
       else if (src === 'Recipe') a.srcRecipe = 1;
-      else if (src === 'Warehouse bill-out') a.srcBill = 1;
+      else if (src === 'Source pending (open question 5)') a.srcPending = 1;
       else a.srcPo = 1;
       const nf = flagCount.get(i) ?? 0;
       const ne = errCount.get(i) ?? 0;
@@ -732,7 +717,7 @@ export interface StoreWeekFresh {
   /** Gross sales of ea items and of lb items, for Average Retail Price per Unit by unit of measure. */
   gEa: number;
   gLb: number;
-  /** Cost of the units sold at landed PO cost, for sell-through against warehouse shipments. */
+  /** Cost of the units sold at landed PO cost. */
   cogs: number;
   purchases: PurchaseBreakdown;
   budget: number;
@@ -976,51 +961,6 @@ export function freshStoreDays(scope: Scope, depts: number[], days: number[]): M
     }
     return out;
   });
-}
-
-const itemPurchCache = new Map<string, { all: Float64Array; whse: Float64Array }>();
-/**
- * Merchandise purchases allocation factor R(cat, week) for the store set: item purchases = (item cost of
- * goods + known loss) × R. Sums over items equal the department's merchandise purchases for the stores.
- */
-export function itemPurchaseFactor(scope: Scope, weeks: number[]): { all: Float64Array; whse: Float64Array } {
-  const key = `${scope.storeKey}#${weeks.join('.')}`;
-  return memo(itemPurchCache, key, () => {
-    const m = getModel();
-    const csAll = catWeekSales(null);
-    const ccAll = catWeekCost(null);
-    const R = new Float64Array(NC * NW);
-    const Rw = new Float64Array(NC * NW);
-    const fr = {} as PurchaseBreakdown;
-    const dp = {} as PurchaseBreakdown;
-    for (const w of weeks) {
-      if (w < 0 || w > LAST_COMPLETE_WEEK) continue;
-      for (const s of scope.stores) {
-        for (let d = 0; d < DEPTS.length; d++) {
-          let wd = 0;
-          for (const c of DEPTS[d].cats) wd += ccAll[c * NW + w] * storeShare(m, c, s, w)[0];
-          if (wd <= 0) continue;
-          deptStoreWeek(m, csAll, d, s, w, fr, dp);
-          let merch = 0;
-          for (const ch of MERCH_CHANNELS) merch += dp[ch];
-          const ratio = merch / wd;
-          const ratioW = dp.whse / wd;
-          for (const c of DEPTS[d].cats) {
-            const sh = storeShare(m, c, s, w)[0];
-            R[c * NW + w] += ratio * sh;
-            Rw[c * NW + w] += ratioW * sh;
-          }
-        }
-      }
-    }
-    return { all: R, whse: Rw };
-  });
-}
-
-/** Item merchandise purchases for one week under the store set's allocation factor. */
-export function itemPurchasesWeek(R: Float64Array, i: number, w: number): number {
-  const m = getModel();
-  return itemCostWeight(m, i, w) * R[ITEMS[i].cat * NW + w];
 }
 
 export function zeroBreakdown(): PurchaseBreakdown {

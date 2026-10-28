@@ -54,15 +54,15 @@ The tab bar holds the five views the workbook requires, in the order agreed afte
 |---|---|---|---|---|---|---|
 | 1 | Category manager / director evaluates item performance with accurate costs tied to recipes | Gross Sales, Net Sales, PO Costs, Purchase Cost per Unit, Net Sales per Unit, Gross Margin ($ / %), Total Loss | To Date, Rolling, Department, Category, Subcategory, SKU Number | Category-Item Summary | Item-Day | Daily sales |
 | 2 | Real-time item cost for random-weight / PLU items, based on POs | PO Cost, PO Cost / Unit, Gross Sales, Gross Margin ($ / %) | To Date, Rolling, Department, Category, Subcategory, SKU Number | Item Cost Over Time; Category-Item Summary | Item-Day | Daily costs and sales |
-| 3 | Simple store-level gross profit from sales and purchases, accounting for loss | Gross Sales, Purchases, Gross Profit ($ / %) | To Date, Rolling, Department, Category | Fresh Report | Category-Day | Daily sales and purchases |
-| 4 | Review shrink impact on a category, spot fat-fingering errors and report them to IT for removal (Add to IT Review List) | Volume Sold, Sales ($), Known Loss (Units), Known Loss ($), High Loss Flag | Department, Category, Item, time | Known Loss Report (Report to IT, Export list for IT); Category-Item Summary | Item-Store-Week | Daily loss |
+| 3 | Simple store-level gross profit from sales and purchases, accounting for loss | Gross Sales, Purchases, Gross Profit ($ / %) | To Date, Rolling, Department, Category | Fresh Report | Category-Week | Weekly, on Thursdays after accounting postings |
+| 4 | Review shrink impact on a category, spot fat-fingering errors and report them to IT for removal (Add to IT Review List) | Volume Sold, Sales ($), Known Loss (Units), Known Loss ($), High Loss Flag | Department, Category, Item, time | Known Loss Report (Add to IT Review List, Export list for IT); Category-Item Summary | Item-Store-Week | Daily loss |
 | 5 | Store or district manager sees where loss comes from, by store, region and district, with high loss flagged | Known Loss (Units / $), High Loss Flag | Region, District, Store Num, Department, Category, SKU Number | Known Loss Report (store table); Category-Item Summary | Item-Store-Week | Daily loss |
-| 6 | Real-time cost of ingredient-based products; a change to a base ingredient flows to every recipe that uses it | Ingredient contribution, Cost / unit, Gross Profit ($ / %), PO Cost according to HQ and Real-time PO Cost | Department, Category, PLU Number, time | Ingredients View ("Where used") | Item-Week | Daily PO cost |
+| 6 | Real-time cost of ingredient-based products; a change to a base ingredient flows to every recipe that uses it | Ingredient contribution, Cost / unit, Gross Profit ($ / %), HQ Average Cost and Real-time PO Cost | Department, Category, PLU Number, time | Ingredients View ("Where used") | Item-Week | Daily PO cost |
 
 ### Filters
 
 Every filter in the workbook is available:
-- **Time:** Date Range, Time Spans to Date (Current Day, WTD, PTD, QTD, YTD), Rolling (6, 13, 26, 52 weeks), Year, Quarter, Period, Week Beginning, Day, and Holiday Periods aligned with last year's same holiday. Dates are always mm/dd/yyyy.
+- **Time:** Date Range, Time Spans to Date (Current Day, WTD, PTD, QTD, YTD), Rolling (6, 13, 26, 52 weeks), Year, Quarter, Period, Week Beginning, Day, and Holiday Periods aligned with last year's same holiday. Dates are always mm/dd/yyyy. The Fresh Report is weekly, so it has no Current Day or Day option; an old link with a day falls back to Period-to-Date or to the week that holds the day.
 - **Business:** Department, Category, Subcategory, SKU Number, Region, District, Store Number and ID Stores, plus a proposed Cost type filter.
 
 A view greys out the filters it does not use, with a tooltip:
@@ -73,7 +73,7 @@ The full state, including column choices and assumptions, lives in the URL query
 
 ### Proposed extras
 
-Every large table has a **Columns** chooser with groups (Sales, Cost, Margin, Loss, Sell-through, YoY), presets, *Show all* and *Workbook default*. Presets:
+Every large table has a **Columns** chooser with groups (Sales, Cost, Margin, Loss, YoY), presets, *Show all* and *Workbook default*. Presets:
 - Category-Item Summary: *Loss focus*.
 - Fresh Report: *Budget focus*.
 
@@ -82,10 +82,9 @@ Every large table also has a sticky hierarchy column and a pinned Total row. **E
 | Proposed measure | Where |
 |---|---|
 | Period-based PO Cost / Unit (`Cost period: Week \| Fiscal period`) | Item Cost Over Time, Category-Item Summary |
-| Cost source switch `PO (real-time) \| HQ (current)` with the margin change in pts | Category-Item Summary (Pending validation) |
+| Cost source switch `PO (real-time) \| HQ average` with the margin change in pts | Category-Item Summary (Pending validation) |
 | Cost type (UPC, PLU, Random weight), Cost reliability, purchase source chip | Item rows, Cost type filter |
 | Margin After Loss % with `Loss basis: Actual known loss \| Expected rate` and editable expected rates (0–30 %) | Category-Item Summary |
-| Units shipped, Units sold, Sell-through %, Shipped value $ | Category-Item Summary, Fresh Report (column chooser) |
 | YoY and ID Stores YoY Gross / Net Sales growth | Column chooser and tile sub-lines |
 | Margin target bands (`src/data/targets.ts`) with a `Below target` chip | Category-Item Summary, Item Cost Over Time, Ingredients View, simulator |
 | Cost change simulator and Where used (read-only, nothing is saved or sent) | Item rows, Item Cost Over Time; Ingredients View |
@@ -98,15 +97,14 @@ Every formula lives in `src/lib/kpis.ts` (pure, typed, null-guarded) and uses th
 
 - **Gross Margin Rate** = SUM(Gross Margin) ÷ SUM(**Gross Sales**). A `Margin on: Gross Sales | Net Sales` toggle offers Net Sales as a proposed option.
 - **Total Purchases** is PO cost spent (Biceps), with these sources:
-  - **Warehouse bill-out** for UPC items: shipments to stores, used as a proxy for purchases.
+  - **Source pending (open question 5)** for UPC items: they have no Biceps PO, and how purchases are built is still open.
   - **Production cost (recipe)** for composite PLUs: units produced × recipe cost; unknown loss is not included.
   - **DSD receipt (HQ)** for items received through direct store delivery and recorded item by item in Retalix HQ. DSD items add up exactly to each department's DSD purchases in the Fresh Report, by store and week.
   - **Fresh Report purchases**: the Fresh Report keeps its own store-level purchase channels. These are a different measure.
 - **Purchase Cost per Unit** = SUM(Total Purchases) ÷ SUM(volume purchased). In Item Cost Over Time it is the **Historical PO Cost**; it is no longer a Category-Item Summary column.
 - **PO Cost / Unit:**
   - **Period-based:** PO spend in the period ÷ volume purchased in the period. A period without purchases is a gap; margins then carry the latest PO cost and say so ("cost from W38").
-  - It equals Purchase Cost per Unit for PLU and random-weight items (open question 5).
-  - **PO Cost according to HQ** is the cost in Retalix HQ.
+  - **HQ Average Cost** is the average cost in Retalix HQ: calculated in Biceps and refreshed several times a day, deals and trade rates included.
   - **Historical PO Cost** is the weighted average PO cost for the filtered period.
   - **Real-time PO Cost** is the last complete week's PO cost ("as of W41" when that week had no purchases).
   - Item Cost Over Time shows the Gross Margin Rate at each of the three. Which cost per unit values are most useful is to align with the business team.
@@ -116,17 +114,28 @@ Every formula lives in `src/lib/kpis.ts` (pure, typed, null-guarded) and uses th
   - Gross Profit ($) = Gross Sales − recipe cost × units sold.
   - Gross Profit (%) = Gross Profit ÷ Gross Sales (Pending validation).
 - **High Loss Flag** = known loss higher than **$1,000** for an item in a store in a week. Exactly $1,000.00 is not flagged.
-  - Threshold basis: at cost, assumed, Pending validation (open question 3).
+  - $1,000 per week per item is the workbook default (open question 2); where the current rule's SQL lives is unknown (open question 26).
+  - Threshold basis: at cost, assumed, Pending validation (not yet in the tracker).
   - "Likely entry error" and "High loss to review" are proposed secondary labels.
 - **Loss valuation:** every loss column says "at cost" or "at retail". Cost vs retail is Pending validation; the Recon Map points to KL1011 "Known Loss Retail $".
 - **Sign convention:** a cost increase is a margin loss. "Annual cost change +$X" reads with "Margin impact −$X", both red; the reverse is green. This applies in Where used and the simulator.
 
-The **KPI definitions** modal lists each KPI with its business definition, calculation, legacy source, reconciliation target, the views that use it, workbook priority and status (Draft, Proposed, Pending validation). It ends with the open questions:
-1. Gross Sales source for the Fresh Report.
-2. Biceps PO access and its link to Retalix.
-3. High-loss thresholds and their basis.
-4. Outside-vendor (C&S, DSD) tracking.
-5. Whether PO Cost / Unit and Purchase Cost per Unit are the same KPI.
+The **KPI definitions** modal lists each KPI with its business definition, calculation, legacy source, reconciliation target, the views that use it, workbook priority and status (Draft, Proposed, Pending validation). It ends with the open questions the prototype cites, numbered as in the workbook's Open Questions sheet:
+- **#1** Real-time PO Cost: access to PO cost in Biceps and its link to Retalix HQ.
+- **#2** High loss threshold ($1,000 per week per item).
+- **#3** Cost for PLU-based and random-weight items.
+- **#5** Fresh Purchases Build (also the source of UPC item purchases).
+- **#6** Receiving data flows (DC and C&S).
+- **#9** Exceptions review scope.
+- **#10** Ingredient and recipe costs.
+- **#12** PO cost at source.
+- **#16** Total Loss source (KL1011 or Ops 300).
+- **#17** Gross Sales basis and source for the Fresh Report.
+- **#26** Where the SQL for the $1,000 rule lives.
+- **#32** Cost measure for volatile items.
+- **#36** Recipe cost write-back.
+
+The loss threshold basis (cost or retail) is Pending validation and not yet in the tracker.
 
 ## How the data is generated
 
@@ -145,9 +154,9 @@ Everything is generated in the browser at startup from a fixed seed, **`20261018
 
 **Cost and purchases.**
 - **PLU and random-weight items:** bought from 1 to 3 vendors, with 2 to 3 deliveries a week. Stores reorder up to par in whole cases, so stock never runs out and slow seasonal items skip weeks. Each PO line has cases, a case pack (for example 25 lb for Roma tomatoes), a case cost and freight.
-- **HQ:** keeps one default cost per item, without freight, last updated 3 to 14 months ago.
-  - Most items cost more on POs than in HQ, partly because of freight (HQ excludes it).
-  - About 27 % cost less, because HQ was set at a seasonal or commodity high.
+- **HQ Average Cost (demo simplification):** at Weis it is calculated in Biceps and flows to Retalix HQ several times a day, deals and trade rates included. To make the gap to PO cost visible, the simulation instead holds one cost per PLU and random-weight item, without freight, set 3 to 14 months ago. This is a simplification of the demo data, not a description of how current the real HQ Average Cost is.
+  - Most items cost more on POs than the simulated HQ cost, partly because of freight (it is excluded).
+  - About 27 % cost less, because the simulated HQ cost was set at a seasonal or commodity high.
 - **UPC items:** come from the Weis distribution center at their average cost.
 - **DSD items** (about 11 % of fresh items: mostly Bakery bread, rolls and bagels; also packaged Deli cheese, grocery bunches, bacon and hot dogs, bagged salads, sushi):
   - Delivered straight to stores. No Biceps PO; receipts are recorded item by item in Retalix HQ at the receipt cost.
@@ -185,7 +194,7 @@ Horizon: FY2024 (starts Sun 12/31/2023) to FY2026 to date, as of **Sun 10/18/202
 | **Pie pumpkin bins:** $150 per bin in HQ, $250 per bin on POs in season (W36–W42). The largest gap between PO and HQ cost of any item. | Item Cost Over Time (pick Pie Pumpkins). |
 | **16 in. Pepperoni Pizza:** recipe last costed 03/2025 at $4.85. The same recipe at today's ingredient costs is $5.66 (box +32 %, dough +18 %, mozzarella and pepperoni +12 %), so margin is about 8 pts too high. | Default PLU in the Ingredients View; the largest recipe cost gap. |
 | **Where used:** pizza dough ball is in 13 PLUs. At $0.85 / lb instead of $0.70, the annual cost change is +$439K and the margin impact −$439K. | Ingredients View › Where used. |
-| **Deli soup:** store 116 sold 1 unit and scanned out 4,000 in FY2026 W40. It is a likely entry error (Known Loss Report scope TBD). | Known Loss Report (flagged entries, store table with the SKU); Report to IT and Export list for IT. |
+| **Deli soup:** store 116 sold 1 unit and scanned out 4,000 in FY2026 W40. It is a likely entry error (Known Loss Report scope TBD). | Known Loss Report (flagged entries, store table with the SKU); Add to IT Review List and Export list for IT. |
 | **Salmon fat-finger:** store 152, W38, 1,110 lb instead of about 15 lb, worth $11,700. | Known Loss Report, flagged entries. |
 | **Strawberries $8.9M:** store 217, W29, above the $100,000 plausibility cap. | Banner; excluded from totals by default. |
 | **Store 154 DSD:** Meat about 7 pts below budget over W39–W42, with DSD at 9 % of sales. | "Below budget" banner in the Fresh Report. |

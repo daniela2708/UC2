@@ -97,7 +97,7 @@ export function DefinitionsDrawer({ open, focusId, onClose }: { open: boolean; f
           <ul className="defs-questions">
             {OPEN_QUESTIONS.map((q) => (
               <li key={q.id}>
-                <span className="chip amber">Open question</span>
+                <span className="chip amber">Open question {q.id}</span>
                 <b>{q.question}</b>
                 <span className="defs-recon">{q.context}</span>
               </li>

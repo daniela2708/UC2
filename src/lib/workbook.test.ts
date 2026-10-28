@@ -30,7 +30,6 @@ import {
   periodPoCost,
   purchaseCostPerUnit,
   roundToX9,
-  sellThrough,
   simulateCostChange,
   totalLoss,
   totalPurchases,
@@ -89,12 +88,9 @@ describe('workbook KPI formulas', () => {
     expect(weightedUnitCost(2 * 10 + 4 * 30, 40)).toBeCloseTo(3.5);
     expect(weightedUnitCost(10, -1)).toBeNull();
   });
-  it('Margin After Loss and Sell-through', () => {
+  it('Margin After Loss', () => {
     expect(marginAfterLoss(0.55, 0.12)).toBeCloseTo(0.43);
     expect(marginAfterLoss(null, 0.12)).toBeNull();
-    expect(sellThrough(80, 100)).toBe(0.8);
-    expect(sellThrough(80, 0)).toBeNull();
-    expect(sellThrough(80, -3)).toBeNull();
   });
 });
 
@@ -327,7 +323,7 @@ describe('Fresh Report', () => {
 });
 
 describe('purchases reconcile', () => {
-  it('item Total Purchases = Biceps PO spend (PLU, RW), bill-out (UPC) or production cost (composite), and Purchase Cost per Unit divides by volume purchased', () => {
+  it('item Total Purchases = Biceps PO spend (PLU, RW), warehouse orders (UPC, source pending) or production cost (composite), and Purchase Cost per Unit divides by volume purchased', () => {
     const all = buildScope(DEFAULT_STATE, ytd);
     const aggs = itemAggregates(all, DEFAULT_STATE.costBasis, 'po');
     const m = getModel();
