@@ -277,6 +277,19 @@ function ItemCostBody({
         }
       />
 
+      <div className="toggle-row">
+        <Segmented<'off' | 'on'>
+          small
+          label="Show retail price"
+          value={showRetail ? 'on' : 'off'}
+          onChange={(v) => setShowRetail(v === 'on')}
+          options={[
+            { value: 'off', label: 'Cost only' },
+            { value: 'on', label: 'Show retail price' },
+          ]}
+        />
+      </div>
+
       <ChartCard
         title="Item Cost Over Time"
         subtitle={`By ${bucket.toLowerCase()} · ${costLabel} ${produced ? '' : it.dsd ? '(DSD receipts in Retalix HQ ÷ volume received) ' : '(PO spend ÷ volume purchased, incl. freight) '}· dashed line = PO Cost according to HQ${gaps ? ` · ${gaps} ${period === 'week' ? 'week' : 'period'}${gaps > 1 ? 's' : ''} without purchases shown as gaps` : ''} · ${qtyLabel.toLowerCase()} below`}
@@ -294,18 +307,6 @@ function ItemCostBody({
       >
         <CostQtyPanels data={chartData} showRetail={showRetail} fmtCost={(v) => moneyUnit(v)} fmtQty={fmtQty} qtyLabel={qtyLabel} costLabel={costLabel} />
       </ChartCard>
-      <div className="toggle-row">
-        <Segmented<'off' | 'on'>
-          small
-          label="Show retail price"
-          value={showRetail ? 'on' : 'off'}
-          onChange={(v) => setShowRetail(v === 'on')}
-          options={[
-            { value: 'off', label: 'Cost only' },
-            { value: 'on', label: 'Show retail price' },
-          ]}
-        />
-      </div>
 
       {it.composite && (
         <section className="card side-card" aria-label="Recipe">
