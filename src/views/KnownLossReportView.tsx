@@ -271,7 +271,7 @@ export function KnownLossReportView({ openDefinitions }: ViewProps) {
         tiles={tiles}
         note={
           <>
-            High Loss Flag: known loss higher than $1,000 for an item in a store in a given week (open question 2). Threshold basis: at cost, assumed{' '}
+            High Loss Flag: known loss higher than $1,000 for an item in a store in a given week (#2). Threshold basis: at cost, assumed{' '}
             <StatusChip status="Pending validation" /> (not yet in the tracker).{' '}
             <button type="button" className="btn-link" onClick={() => openDefinitions('high-loss-flag')}>
               See definitions

@@ -261,7 +261,7 @@ function ItemCostBody({
         it.costType === 'UPC' && (
           <Banner kind="note">
             UPC items use the HQ Average Cost, which already works; real-time PO cost matters for PLU and random-weight items. The source of UPC purchases is pending
-            (open question 5).
+            (#5).
           </Banner>
         )
       )}

@@ -97,7 +97,7 @@ Every formula lives in `src/lib/kpis.ts` (pure, typed, null-guarded) and uses th
 
 - **Gross Margin Rate** = SUM(Gross Margin) ÷ SUM(**Gross Sales**). A `Margin on: Gross Sales | Net Sales` toggle offers Net Sales as a proposed option.
 - **Total Purchases** is PO cost spent (Biceps), with these sources:
-  - **Source pending (open question 5)** for UPC items: they have no Biceps PO, and how purchases are built is still open.
+  - **Source pending (#5)** for UPC items: they have no Biceps PO, and how purchases are built is still open.
   - **Production cost (recipe)** for composite PLUs: units produced × recipe cost; unknown loss is not included.
   - **DSD receipt (HQ)** for items received through direct store delivery and recorded item by item in Retalix HQ. DSD items add up exactly to each department's DSD purchases in the Fresh Report, by store and week.
   - **Fresh Report purchases**: the Fresh Report keeps its own store-level purchase channels. These are a different measure.
@@ -114,7 +114,7 @@ Every formula lives in `src/lib/kpis.ts` (pure, typed, null-guarded) and uses th
   - Gross Profit ($) = Gross Sales − recipe cost × units sold.
   - Gross Profit (%) = Gross Profit ÷ Gross Sales (Pending validation).
 - **High Loss Flag** = known loss higher than **$1,000** for an item in a store in a week. Exactly $1,000.00 is not flagged.
-  - $1,000 per week per item is the workbook default (open question 2); where the current rule's SQL lives is unknown (open question 26).
+  - $1,000 per week per item is the workbook default (#2); where the current rule's SQL lives is unknown (#26).
   - Threshold basis: at cost, assumed, Pending validation (not yet in the tracker).
   - "Likely entry error" and "High loss to review" are proposed secondary labels.
 - **Loss valuation:** every loss column says "at cost" or "at retail". Cost vs retail is Pending validation; the Recon Map points to KL1011 "Known Loss Retail $".

@@ -316,7 +316,7 @@ export interface Agg {
   poLb: number;
   poUnitsEa: number;
   poUnitsLb: number;
-  /** Total Purchases: PO spend (Biceps); UPC: source pending (open question 5); composite PLUs: production cost (recipe). */
+  /** Total Purchases: PO spend (Biceps); UPC: source pending (#5); composite PLUs: production cost (recipe). */
   purch: number;
   purchEa: number;
   purchLb: number;
@@ -400,10 +400,10 @@ export interface ItemAgg extends Agg {
 }
 
 /** Where an item's Total Purchases come from. */
-export type PurchaseSource = 'Biceps PO' | 'Source pending (open question 5)' | 'Recipe' | 'DSD receipt (HQ)';
+export type PurchaseSource = 'Biceps PO' | 'Source pending (#5)' | 'Recipe' | 'DSD receipt (HQ)';
 export function purchaseSource(i: number): PurchaseSource {
   const it = ITEMS[i];
-  return it.dsd ? 'DSD receipt (HQ)' : it.composite ? 'Recipe' : it.costType === 'UPC' ? 'Source pending (open question 5)' : 'Biceps PO';
+  return it.dsd ? 'DSD receipt (HQ)' : it.composite ? 'Recipe' : it.costType === 'UPC' ? 'Source pending (#5)' : 'Biceps PO';
 }
 
 /**
@@ -560,7 +560,7 @@ export function itemAggregates(scope: Scope, costBasis: readonly CostElement[], 
       const src = purchaseSource(i);
       if (src === 'DSD receipt (HQ)') a.srcDsd = 1;
       else if (src === 'Recipe') a.srcRecipe = 1;
-      else if (src === 'Source pending (open question 5)') a.srcPending = 1;
+      else if (src === 'Source pending (#5)') a.srcPending = 1;
       else a.srcPo = 1;
       const nf = flagCount.get(i) ?? 0;
       const ne = errCount.get(i) ?? 0;

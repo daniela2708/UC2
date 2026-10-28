@@ -54,7 +54,7 @@ function itemColumns(idStores: boolean, basis: LossBasis): HierCol[] {
       key: 'purch',
       label: 'Total Purchases',
       title:
-        'PO cost spent (Biceps PO cost × volume). UPC: source pending (open question 5). Composite PLUs: production cost (recipe) = units produced (sold + known loss) × recipe cost; unknown loss not included. DSD items: DSD receipts recorded in Retalix HQ, which add up to the department’s Fresh Report DSD purchases. Store filters take the stores’ share of the category.',
+        'PO cost spent (Biceps PO cost × volume). UPC: source pending (#5). Composite PLUs: production cost (recipe) = units produced (sold + known loss) × recipe cost; unknown loss not included. DSD items: DSD receipts recorded in Retalix HQ, which add up to the department’s Fresh Report DSD purchases. Store filters take the stores’ share of the category.',
       group: 'Cost',
     },
     {
@@ -134,7 +134,7 @@ interface CellOpts {
 
 const SOURCE_TIP: Record<PurchaseSource, string> = {
   'Biceps PO': 'PO cost spent, from PO cost and volume in Biceps.',
-  'Source pending (open question 5)': 'UPC items have no Biceps PO; the source of their purchases is pending (open question 5).',
+  'Source pending (#5)': 'UPC items have no Biceps PO; the source of their purchases is pending (#5).',
   Recipe: 'Production cost (recipe): units produced (sold + known loss) × recipe cost. Unknown loss is not included.',
   'DSD receipt (HQ)':
     'Received through DSD (direct store delivery) and recorded item by item in Retalix HQ, at the receipt cost. DSD items add up to the department’s DSD purchases in the Fresh Report.',
@@ -163,7 +163,7 @@ function aggCells(
   const po = perUnit(a, a.poEa, a.poLb, a.poUnitsEa, a.poUnitsLb);
   const sources = [
     a.srcPo ? `${count(a.srcPo)} Biceps PO` : '',
-    a.srcPending ? `${count(a.srcPending)} source pending (open question 5)` : '',
+    a.srcPending ? `${count(a.srcPending)} source pending (#5)` : '',
     a.srcRecipe ? `${count(a.srcRecipe)} recipe` : '',
     a.srcDsd ? `${count(a.srcDsd)} DSD receipt (HQ)` : '',
   ].filter(Boolean);
@@ -425,7 +425,7 @@ export function CategoryItemView({ openDefinitions }: ViewProps) {
     },
     {
       label: 'Total Purchases',
-      info: 'PO cost spent (Biceps). UPC: source pending (open question 5). Composite PLUs: production cost (recipe), unknown loss not included. DSD items: receipts recorded in Retalix HQ.',
+      info: 'PO cost spent (Biceps). UPC: source pending (#5). Composite PLUs: production cost (recipe), unknown loss not included. DSD items: receipts recorded in Retalix HQ.',
       value: moneyCompact(total.purch),
       sub: (() => {
         const n = [total.srcPo, total.srcPending, total.srcRecipe, total.srcDsd].filter((x) => x > 0).length;
@@ -434,7 +434,7 @@ export function CategoryItemView({ openDefinitions }: ViewProps) {
           : total.srcRecipe
             ? 'Production cost (recipe)'
             : total.srcPending
-              ? 'Source pending (open question 5)'
+              ? 'Source pending (#5)'
               : total.srcDsd
                 ? 'DSD receipt (HQ)'
                 : 'Biceps PO';
@@ -520,7 +520,7 @@ export function CategoryItemView({ openDefinitions }: ViewProps) {
             ]}
           />
           <StatusChip status="Pending validation" />
-          <InfoTip text="PLU and random-weight items: PO = real-time cost from purchase orders (Biceps), freight included; HQ = the HQ Average Cost in Retalix HQ, Weis’s back-office system, calculated in Biceps and refreshed several times a day, deals and trade rates included. UPC items always use the HQ Average Cost. Access to PO cost in Biceps is open question 1." />
+          <InfoTip text="PLU and random-weight items: PO = real-time cost from purchase orders (Biceps), freight included; HQ = the HQ Average Cost in Retalix HQ, Weis’s back-office system, calculated in Biceps and refreshed several times a day, deals and trade rates included. UPC items always use the HQ Average Cost. Access to PO cost in Biceps is pending (#1)." />
           <span className="flip-delta">
             On {state.costSource === 'po' ? 'HQ' : 'PO'} cost: {pct(altGmr)} (<Var value={pointsDiff(altGmr, gmr)} />)
           </span>

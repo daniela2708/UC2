@@ -95,7 +95,7 @@ export const KPI_DEFINITIONS: KpiDefinition[] = [
     name: 'Total Purchases',
     unit: '$',
     definition:
-      'PO cost spent, from PO cost and volume in Biceps (landed: case cost + freight). Sources by item: Biceps PO for PLU and random-weight items; UPC items: source pending (open question 5); production cost (recipe) for composite PLUs = units produced (sold + known loss) × recipe cost, unknown loss not included; DSD receipt (HQ) for items received through direct store delivery and recorded item by item in Retalix HQ (about 11 % of fresh items, mostly Bakery bread). Store filters take the stores’ share of the category. The Fresh Report keeps its own store-level purchases (Whse, DSD, Packaging, Reclaim, Transfers, In transit, Donations, WC credit, Scan credit), labelled "Fresh Report purchases".',
+      'PO cost spent, from PO cost and volume in Biceps (landed: case cost + freight). Sources by item: Biceps PO for PLU and random-weight items; UPC items: source pending (#5); production cost (recipe) for composite PLUs = units produced (sold + known loss) × recipe cost, unknown loss not included; DSD receipt (HQ) for items received through direct store delivery and recorded item by item in Retalix HQ (about 11 % of fresh items, mostly Bakery bread). Store filters take the stores’ share of the category. The Fresh Report keeps its own store-level purchases (Whse, DSD, Packaging, Reclaim, Transfers, In transit, Donations, WC credit, Scan credit), labelled "Fresh Report purchases".',
     formula: 'Σ PO lines (cases × (case cost + freight)) in the period; Fresh Report: Σ purchase channels',
     source: `${BICEPS} · Retalix HQ (DSD receipts) · ${FRESH}`,
     reconciliation: 'Item PO spend ties to Biceps PO lines. DSD items add up exactly to each department’s Fresh Report DSD purchases by store and week. Biceps PO and recipe purchases are a different measure from the Fresh Report’s warehouse and other channels.',
@@ -250,14 +250,14 @@ export const KPI_DEFINITIONS: KpiDefinition[] = [
     name: 'High Loss Flag',
     unit: 'T / F',
     definition:
-      'Loss higher than $1,000 in a given week, for an item in a store (open question 2). Threshold basis: at cost, assumed, Pending validation (not yet in the tracker): nobody has confirmed whether the current $1,000 rule is at cost or at retail, and the Recon Map points to KL1011 "Known Loss Retail $". Proposed refinement, shown only as a secondary label: "Likely entry error" (loss units above 20× the item-store typical weekly loss units, or above the $100,000 plausibility cap) or "High loss to review". An optional 26-week rule (loss also more than 100 % above the item-store 26-week average) is available in the Flag rules popover, off by default.',
+      'Loss higher than $1,000 in a given week, for an item in a store (#2). Threshold basis: at cost, assumed, Pending validation (not yet in the tracker): nobody has confirmed whether the current $1,000 rule is at cost or at retail, and the Recon Map points to KL1011 "Known Loss Retail $". Proposed refinement, shown only as a secondary label: "Likely entry error" (loss units above 20× the item-store typical weekly loss units, or above the $100,000 plausibility cap) or "High loss to review". An optional 26-week rule (loss also more than 100 % above the item-store 26-week average) is available in the Flag rules popover, off by default.',
     formula: 'Weekly known loss $ at cost (item × store × week) > 1,000. Exactly $1,000.00 is not flagged.',
     source: KL,
     reconciliation: 'Category managers report likely entry errors to IT ("Add to IT Review List", "Export list for IT") so they are removed from known loss.',
     status: 'Pending validation',
     priority: 'Must',
     views: [CI, KLR],
-    note: 'Scope TBD: may move to a separate use case or a later wave; the MVP focuses on item cost and ingredient costing. The High Loss Flag remains a required KPI in Category-Item Summary. Threshold basis: at cost, assumed, Pending validation (not yet in the tracker). Where the current $1,000 rule’s SQL lives is unknown (open question 26).',
+    note: 'Scope TBD: may move to a separate use case or a later wave; the MVP focuses on item cost and ingredient costing. The High Loss Flag remains a required KPI in Category-Item Summary. Threshold basis: at cost, assumed, Pending validation (not yet in the tracker). Where the current $1,000 rule’s SQL lives is unknown (#26).',
   },
 
   {
@@ -320,7 +320,7 @@ KPI_DEFINITIONS.push(
     definition: 'PLU and random-weight items use the real-time PO cost by default: each week’s period-based PO cost (PO spend ÷ volume purchased, freight included), or the most recent one when nothing was bought that week. Switching to HQ shows margins on the HQ Average Cost in Retalix HQ, Weis’s back-office system. UPC items always use the HQ average cost. The switch shows how many points the margin moves.',
     formula: 'Net cost from the weekly period-based PO cost or the HQ Average Cost',
     source: `${BICEPS} · Retalix HQ`,
-    reconciliation: 'Pending access to PO cost in Biceps (open question 1).',
+    reconciliation: 'Pending access to PO cost in Biceps (#1).',
     status: 'Pending validation',
     priority: 'Proposed',
     views: [CI],
