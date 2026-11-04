@@ -79,7 +79,7 @@ describe('workbook KPI formulas', () => {
   it('Total Purchases sums every Fresh Report channel', () => {
     expect(totalPurchases({ whse: 70, dsd: 3, packaging: 1, reclaim: 0.1, transfers: 0, inTransit: -0.1, donations: 0.2, wcCredit: -0.4, scanCredit: -2 })).toBeCloseTo(71.8);
   });
-  it('Total Loss picks the valuation, LY is 364 days, YoY is (TY − LY) and (TY − LY) ÷ LY', () => {
+  it('Known Loss picks the valuation, LY is 364 days, YoY is (TY − LY) and (TY − LY) ÷ LY', () => {
     expect(totalLoss(10, 19, 'retail')).toBe(19);
     expect(lastYear(400)).toBe(36);
     expect(yoyGrowth(110, 100)).toEqual({ abs: 10, pct: 0.1 });

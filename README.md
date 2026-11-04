@@ -52,7 +52,7 @@ The tab bar holds the five views the workbook requires, in the order agreed afte
 
 | # | User story (summary) | Metrics | Filters | View | Lowest grain | Refresh |
 |---|---|---|---|---|---|---|
-| 1 | Category manager / director evaluates item performance with accurate costs tied to recipes | Gross Sales, Net Sales, PO Costs, Purchase Cost per Unit, Net Sales per Unit, Gross Margin ($ / %), Total Loss | To Date, Rolling, Department, Category, Subcategory, SKU Number | Category-Item Summary | Item-Day | Daily sales |
+| 1 | Category manager / director evaluates item performance with accurate costs tied to recipes | Gross Sales, Net Sales, PO Costs, Purchase Cost per Unit, Net Sales per Unit, Gross Margin ($ / %), Known Loss | To Date, Rolling, Department, Category, Subcategory, SKU Number | Category-Item Summary | Item-Day | Daily sales |
 | 2 | Real-time item cost for random-weight / PLU items, based on POs | PO Cost, PO Cost / Unit, Gross Sales, Gross Margin ($ / %) | To Date, Rolling, Department, Category, Subcategory, SKU Number | Item Cost Over Time; Category-Item Summary | Item-Day | Daily costs and sales |
 | 3 | Simple store-level gross profit from sales and purchases, accounting for loss | Gross Sales, Purchases, Gross Profit ($ / %) | To Date, Rolling, Department, Category | Fresh Report | Category-Week | Weekly, on Thursdays after accounting postings |
 | 4 | Review shrink impact on a category, spot fat-fingering errors and report them to IT for removal (Add to IT Review List) | Volume Sold, Sales ($), Known Loss (Units), Known Loss ($), High Loss Flag | Department, Category, Item, time | Known Loss Report (Add to IT Review List, Export list for IT); Category-Item Summary | Item-Store-Week | Daily loss |
@@ -129,7 +129,7 @@ The **KPI definitions** modal lists each KPI with its business definition, calcu
 - **#9** Exceptions review scope.
 - **#10** Ingredient and recipe costs.
 - **#12** PO cost at source.
-- **#16** Total Loss source (KL1011 or Ops 300).
+- **#16** Loss source: answered, KL1011 known loss (not Ops 300). The workbook's Total Loss is labelled **Known Loss** everywhere.
 - **#17** Gross Sales basis and source for the Fresh Report.
 - **#26** Where the SQL for the $1,000 rule lives.
 - **#32** Cost measure for volatile items.

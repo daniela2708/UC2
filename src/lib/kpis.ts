@@ -216,13 +216,13 @@ export function budgetGpPct(sumBudgetGp: Num, sumSales: Num): number | null {
 
 export type LossBasis = 'cost' | 'retail';
 
-/** Total Loss = known loss at cost (default) or at retail. */
+/** Known Loss (workbook: Total Loss) = KL1011 known loss at cost (default) or at retail. */
 export function totalLoss(atCost: Num, atRetail: Num, basis: LossBasis): number | null {
   const v = basis === 'cost' ? atCost : atRetail;
   return ok(v) ? v : null;
 }
 
-/** Loss % of Sales = Total Loss ÷ Gross Sales. */
+/** Loss % of Sales = Known Loss ÷ Gross Sales. */
 export function lossPctOfSales(loss: Num, grossSales: Num): number | null {
   return safeDiv(loss, grossSales);
 }

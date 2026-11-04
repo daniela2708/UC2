@@ -65,8 +65,8 @@ function itemColumns(idStores: boolean, basis: LossBasis): HierCol[] {
     },
     { key: 'tnc', label: 'Total Net Cost', title: 'Cost of units sold under the selected cost basis', group: 'Cost' },
     { key: 'ncu', label: 'Net Cost / Unit', title: 'Total Net Cost ÷ Total Volume', group: 'Cost' },
-    { key: 'loss', label: `Total Loss ($) · ${lossBasisWord(basis)}`, title: lossTitle(basis), group: 'Loss' },
-    { key: 'lossU', label: 'Total Loss (Units)', title: 'Known loss in units or lb', group: 'Loss' },
+    { key: 'loss', label: `Known Loss ($) · ${lossBasisWord(basis)}`, title: lossTitle(basis), group: 'Loss' },
+    { key: 'lossU', label: 'Known Loss (Units)', title: 'Known loss in units or lb', group: 'Loss' },
     { key: 'flag', label: 'High Loss Flag', title: HIGH_LOSS_FLAG_TIP, group: 'Loss' },
     { key: 'rel', label: 'Cost reliability', title: 'UPC: average cost is reliable. PLU and random weight: under review.', group: 'Cost', defaultHidden: true, left: true },
     { key: 'mal', label: 'Margin After Loss %', title: 'Proposed: Gross Margin Rate − loss rate (actual known loss or the expected rate)', group: 'Margin', defaultHidden: true },
@@ -377,7 +377,7 @@ export function CategoryItemView({ openDefinitions }: ViewProps) {
   const lyGmr = grossMarginRate(lyGm, total.lyGross, total.lyNet, mb);
   const loss = totalLoss(total.loss, total.lossRetail, basis);
   const lossPct = lossPctOfSales(loss, total.gross);
-  // Entry errors in scope, to show Total Loss with and without them side by side.
+  // Entry errors in scope, to show Known Loss with and without them side by side.
   const errLoss = useMemo(() => {
     let v = 0;
     for (const f of findFlags(scope, Math.min(range.startWeek, LAST_COMPLETE_WEEK), Math.min(range.endWeek, LAST_COMPLETE_WEEK)))
@@ -441,7 +441,7 @@ export function CategoryItemView({ openDefinitions }: ViewProps) {
       })(),
     },
     {
-      label: 'Total Loss ($)',
+      label: 'Known Loss ($)',
       info: `${lossTitle(basis, 'Known loss (KL1011 Dept Known Loss by Item)')} Likely entry errors are excluded by default.`,
       value: moneyCompact(lossIncl),
       sub: (
@@ -480,7 +480,7 @@ export function CategoryItemView({ openDefinitions }: ViewProps) {
             {' '}(<b>{pointsDiff(gmr, lyGmr) !== null ? <Var value={pointsDiff(gmr, lyGmr)} /> : DASH}</b> vs. last year)
           </>
         )}
-        , Total Purchases <b>{moneyCompact(total.purch)}</b>, Total Loss <b>{moneyCompact(loss)}</b> (<b>{pct(lossPct)}</b> of sales).
+        , Total Purchases <b>{moneyCompact(total.purch)}</b>, Known Loss <b>{moneyCompact(loss)}</b> (<b>{pct(lossPct)}</b> of sales).
       </SectionHeading>
 
       <BannerStack>
@@ -532,7 +532,7 @@ export function CategoryItemView({ openDefinitions }: ViewProps) {
         tiles={tiles}
         note={
           <>
-            Total Net Sales, Gross Margin Rate and Total Loss are <b>Pending validation</b>; cost basis and the period-based PO cost are <b>Proposed</b>.{' '}
+            Total Net Sales, Gross Margin Rate and Known Loss are <b>Pending validation</b>; cost basis and the period-based PO cost are <b>Proposed</b>.{' '}
             <button type="button" className="btn-link" onClick={() => openDefinitions('gm-rate')}>
               See definitions
             </button>

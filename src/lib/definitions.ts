@@ -207,16 +207,16 @@ export const KPI_DEFINITIONS: KpiDefinition[] = [
   },
   {
     id: 'total-loss',
-    name: 'Total Loss',
+    name: 'Known Loss',
     unit: '$ and Units',
-    definition: 'Total loss recorded, in $ and units, at cost by default or at retail (about 1.8–2.0 × cost). Totals exclude flagged entries by default.',
+    definition: 'Known loss recorded in KL1011 (not the Ops 300 report), in $ and units, at cost by default or at retail (about 1.8–2.0 × cost). Totals exclude flagged entries by default.',
     formula: 'Σ known loss $ ; Σ known loss units',
     source: KL,
     reconciliation: 'Matches KL1011 department totals once flagged entries are reviewed.',
     status: 'Pending validation',
     priority: 'Must',
     views: [CI, KLR],
-    note: 'Removed from the Fresh Report after the prototype review.',
+    note: 'Called Total Loss in the workbook; labelled Known Loss because the source is KL1011 known loss only (#16). Removed from the Fresh Report after the prototype review.',
   },
 
   {
@@ -467,8 +467,8 @@ export const OPEN_QUESTIONS: OpenQuestion[] = [
   },
   {
     id: '16',
-    question: 'Source of truth for total loss: KL1011 or the Ops 300 report.',
-    context: 'Blocks the Known Loss build.',
+    question: 'Source of truth for loss: KL1011 or the Ops 300 report.',
+    context: 'Answered: KL1011 known loss, not Ops 300. Every loss figure in the prototype is labelled Known Loss.',
   },
   {
     id: '17',

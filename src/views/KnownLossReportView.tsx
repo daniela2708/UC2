@@ -228,7 +228,7 @@ export function KnownLossReportView({ openDefinitions }: ViewProps) {
         }
         question="Where does known loss come from, by item and by store, and which entries should IT remove?"
         painPoint="High loss and data entry errors are found late, and removing them depends on emails to IT."
-        validate="Scope TBD, may move to a separate use case (#9). The source of truth for loss, KL1011 or Ops 300, blocks the build (#16), and where the SQL for the $1,000 rule lives is unknown (#26)."
+        validate="Scope TBD, may move to a separate use case (#9). Loss comes from KL1011 known loss, not Ops 300 (#16); where the SQL for the $1,000 rule lives is unknown (#26)."
       >
         {describeProductScope(state)}, {describeStoreScope(state)}, {weeklyRange}: Known Loss <b>{moneyCompact(lossShown)}</b> {basisWord} on <b>{moneyCompact(total.gross)}</b> of sales, with{' '}
         <b>{count(flags.length)}</b> High Loss Flag{flags.length === 1 ? '' : 's'} (weekly loss above $1,000)
