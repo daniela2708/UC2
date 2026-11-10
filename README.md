@@ -7,7 +7,7 @@ The requirements workbook is the source of truth for view names, KPI names, form
 - Deli composite PLU costs are typed into Retalix HQ (Weis's back-office system, "HQ" for short below) from Excel about once a year.
 - UPC average cost already works.
 
-BCG named two MVP priorities, and the prototype shows both: ingredient cost flowing through recipes (Ingredients View) and period-based PO cost (Item Cost Over Time).
+The prototype shows period-based PO cost (Item Cost Over Time) and, as a proposed view, ingredient cost flowing through recipes (Ingredients View). Whether the Ingredients View is in the MVP is pending confirmation with the business (#44); recipes would come from Upshop (Inva Fresh) through its API (#10, #44).
 
 > **Prototype disclaimer:** all data is simulated. Names of stores and districts follow the real Weis structure, but every figure is generated and must not be used for business decisions.
 
@@ -43,10 +43,10 @@ The tab bar holds the five views the workbook requires, in the order agreed afte
 | **Item Cost Over Time** | No real-time cost for commoditized items. What does this item really cost us, and since when? One SKU at a time. | PO cost by week or fiscal period; purchase order lines |
 | **Category-Item Summary** | Which items make money once cost and loss are counted? | Department › Category › Subcategory › SKU Number; click an item for its store-level loss in the Known Loss Report |
 | **Fresh Report** | Which stores and districts are behind on fresh margin? | Region › District › Store Number |
-| **Ingredients View** | No clear cost analytics for ingredient-based items. What does each ingredient add to a PLU's cost, and what happens when a base ingredient changes? | Ingredient table; "Where used" across every recipe |
+| **Ingredients View** `MVP TBD` | No clear cost analytics for ingredient-based items. What does each ingredient add to a PLU's cost, and what happens when a base ingredient changes? | Ingredient table; "Where used" across every recipe |
 | **Known Loss Report** `Scope TBD` | Where does known loss come from, by item and store, and which entries should IT remove? Opens on the last full week. | Department › Category › Item; one row per Store Num |
 
-**Known Loss Report scope (TBD).** The team agreed that shrink may become a separate use case. The Known Loss Report may move to a separate use case or a later wave; the MVP focuses on item cost and ingredient costing. The High Loss Flag remains a required KPI in Category-Item Summary.
+**Known Loss Report scope (TBD).** The team agreed that shrink may become a separate use case. The Known Loss Report may move to a separate use case or a later wave; the MVP focuses on item cost; whether ingredient costing is in the MVP is to confirm with the business (#44). The High Loss Flag remains a required KPI in Category-Item Summary.
 
 ### How each user story is satisfied
 
@@ -126,13 +126,17 @@ The **KPI definitions** modal lists each KPI with its business definition, calcu
 - **#5** Purchases build: the Fresh Report uses the Workday general ledger; Category-Item Summary uses Estimated Purchases from the invoicing application, still to confirm in the dashboard.
 - **#6** Receiving data flows (DC and C&S).
 - **#9** Exceptions review scope.
-- **#10** Ingredient and recipe costs.
+- **#10** Ingredient and recipe costs: recipes exist in Upshop (Inva Fresh); they need uploading and the API connecting to the dashboard.
 - **#12** PO cost at source.
 - **#16** Loss source: answered, KL1011 known loss (not Ops 300). The workbook's Total Loss is labelled **Known Loss** everywhere.
 - **#17** Gross Sales basis and source for the Fresh Report.
 - **#26** Where the SQL for the $1,000 rule lives.
 - **#32** Cost measure for volatile items.
 - **#36** Recipe cost write-back.
+- **#44** Upshop viability as the recipe source, and whether ingredients go in the MVP.
+- **#45** What the Upshop API holds, and how reliable it is.
+- **#46** Which recipes are in scope, and which are not in Upshop yet (for example pizza).
+- **#47** How missing recipes are added, data quality checks and modeling for the dashboard.
 
 The loss threshold basis (cost or retail) is Pending validation and not yet in the tracker.
 

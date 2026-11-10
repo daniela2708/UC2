@@ -24,6 +24,9 @@ function qtyText(qty: number, unit: string): string {
   return `${q} ${unit}`;
 }
 
+/** Whether ingredients go in the MVP is John Cooper's follow-up with the business (#44). */
+const IV_SCOPE_NOTE = 'Proposed view: whether the Ingredients View is in the MVP is pending confirmation with the business (#44).';
+
 export function IngredientsView({ openDefinitions }: ViewProps) {
   const { state, update, range } = useScope();
   const list = useMemo(() => ingredientPickerItems(state.dept, state.cat), [state.dept, state.cat]);
@@ -112,9 +115,14 @@ function IngredientsBody({
       <SectionHeading
         eyebrow="Recipe cost"
         title="Ingredients View"
+        badge={
+          <span className="chip status-pending" title={IV_SCOPE_NOTE}>
+            MVP TBD
+          </span>
+        }
         question="What does each ingredient add to this PLU’s cost, and what happens when a base ingredient changes?"
         painPoint="No clear cost analytics for ingredient-based items: recipe costs are typed into Retalix HQ from Excel about once a year, and a change in a base ingredient does not reach the recipes that use it."
-        validate="How recipes are maintained is pending: a standardized Excel in a secured SharePoint landing zone or Power Apps, and IT is checking for an existing component repository (#10). Writing recipe costs back to HQ stays manual and out of scope (#36)."
+        validate="Recipes would come from Upshop (Inva Fresh) through its API (#10, #44). Still to review: what data the API holds (#45), which recipes are in scope and which are not in Upshop, such as pizza (#46), and how missing recipes are loaded (#47). Writing recipe costs back to HQ stays out of scope (#36)."
       >
         {it.name} ({it.code}), {range.label}: cost <b>{moneyUnit(sum.costPerUnit)}</b> per unit from {c.components.length} ingredients; the largest is{' '}
         <b>{[...sum.rows].sort((a, b) => b.contribution - a.contribution)[0].name}</b> at{' '}

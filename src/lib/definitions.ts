@@ -242,7 +242,7 @@ export const KPI_DEFINITIONS: KpiDefinition[] = [
     status: 'Draft',
     priority: 'Must',
     views: [KLR],
-    note: 'Scope TBD: may move to a separate use case or a later wave; the MVP focuses on item cost and ingredient costing. The High Loss Flag remains a required KPI in Category-Item Summary.',
+    note: 'Scope TBD: may move to a separate use case or a later wave; the MVP focuses on item cost; whether ingredient costing is in the MVP is to confirm with the business (#44). The High Loss Flag remains a required KPI in Category-Item Summary.',
   },
   {
     id: 'it-review-list',
@@ -255,7 +255,7 @@ export const KPI_DEFINITIONS: KpiDefinition[] = [
     status: 'Proposed',
     priority: 'Proposed',
     views: [KLR],
-    note: 'Scope TBD: may move to a separate use case or a later wave; the MVP focuses on item cost and ingredient costing. The High Loss Flag remains a required KPI in Category-Item Summary.',
+    note: 'Scope TBD: may move to a separate use case or a later wave; the MVP focuses on item cost; whether ingredient costing is in the MVP is to confirm with the business (#44). The High Loss Flag remains a required KPI in Category-Item Summary.',
   },
   {
     id: 'high-loss-flag',
@@ -269,7 +269,7 @@ export const KPI_DEFINITIONS: KpiDefinition[] = [
     status: 'Pending validation',
     priority: 'Must',
     views: [CI, KLR],
-    note: 'Scope TBD: may move to a separate use case or a later wave; the MVP focuses on item cost and ingredient costing. The High Loss Flag remains a required KPI in Category-Item Summary. Threshold basis: at cost, assumed, Pending validation (not yet in the tracker). Where the current $1,000 rule’s SQL lives is unknown (#26).',
+    note: 'Scope TBD: may move to a separate use case or a later wave; the MVP focuses on item cost; whether ingredient costing is in the MVP is to confirm with the business (#44). The High Loss Flag remains a required KPI in Category-Item Summary. Threshold basis: at cost, assumed, Pending validation (not yet in the tracker). Where the current $1,000 rule’s SQL lives is unknown (#26).',
   },
 
   {
@@ -470,7 +470,7 @@ export const OPEN_QUESTIONS: OpenQuestion[] = [
   {
     id: '10',
     question: 'How ingredient and recipe costs are maintained, and whether the dashboard only reads recipes or also edits them.',
-    context: 'Blocks the build. Recipe maintenance is undecided: a standardized Excel in a secured SharePoint landing zone or Power Apps. IT is checking for an existing component repository.',
+    context: 'Partly answered: recipes exist in Upshop (Inva Fresh), but the team would need to upload all recipes, and the tech team would connect the API to the dashboard (timing TBD).',
   },
   {
     id: '12',
@@ -501,5 +501,25 @@ export const OPEN_QUESTIONS: OpenQuestion[] = [
     id: '36',
     question: 'Recipe cost write-back: can an ingredient cost change flow to every PLU that uses it in HQ?',
     context: 'Write-back to HQ is manual and out of scope for the prototype.',
+  },
+  {
+    id: '44',
+    question: 'Is Upshop (Inva Fresh) a viable source for recipes, and how can its data be extracted?',
+    context: 'Partly answered: Upshop is the production planning and recipe management system, and it has an API. Whether ingredients go in the MVP is to confirm with the business.',
+  },
+  {
+    id: '45',
+    question: 'What the Upshop API holds (recipes, ingredients, quantities, units, item codes that link to HQ, costs), and whether it is reliable and up to date.',
+    context: 'Open; depends on #44.',
+  },
+  {
+    id: '46',
+    question: 'Which recipes the Ingredients View should cover, which are already in Upshop and which live outside it.',
+    context: 'Partly answered: Deli keeps one Excel workbook per category; pizza is not a production item and may not have a recipe in Upshop yet.',
+  },
+  {
+    id: '47',
+    question: 'How missing recipes are added to Upshop, which quality checks the recipe data needs, and how the API data is modeled for the dashboard.',
+    context: 'Open; depends on #44 to #46.',
   },
 ];

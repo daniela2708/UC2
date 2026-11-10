@@ -783,6 +783,19 @@ describe('Estimated Purchases (#5)', () => {
   });
 });
 
+describe('Ingredients View source and MVP status (#10, #44 to #47)', () => {
+  it('lists the Upshop questions and drops the SharePoint / Power Apps option', async () => {
+    const { KPI_DEFINITIONS, OPEN_QUESTIONS } = await import('./definitions');
+    const ids = OPEN_QUESTIONS.map((q) => q.id);
+    for (const n of ['10', '36', '44', '45', '46', '47']) expect(ids).toContain(n);
+    expect(new Set(ids).size).toBe(ids.length);
+    expect(OPEN_QUESTIONS.find((q) => q.id === '10')!.context).toMatch(/Upshop/);
+    const text = JSON.stringify({ KPI_DEFINITIONS, OPEN_QUESTIONS });
+    expect(text).not.toMatch(/SharePoint|Power Apps/);
+    expect(text).not.toMatch(/MVP focuses on item cost and ingredient costing/);
+  });
+});
+
 describe('prototype review feedback', () => {
   it('tabs follow the agreed order, open on Item Cost Over Time, and the Known Loss Report defaults to the last full week', async () => {
     const { TABS, tabDefaultTime } = await import('./filters');

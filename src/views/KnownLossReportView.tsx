@@ -22,7 +22,7 @@ import { extremeInScope, incompleteStores, lossBasisWord, lossTitle, useScope, V
 
 /** Agreed in the technical session: shrink may become its own use case. */
 const KL_SCOPE_NOTE =
-  'May move to a separate use case or a later wave; the MVP focuses on item cost and ingredient costing. The High Loss Flag remains a required KPI in Category-Item Summary.';
+  'May move to a separate use case or a later wave; the MVP focuses on item cost; whether ingredient costing is in the MVP is to confirm with the business (#44). The High Loss Flag remains a required KPI in Category-Item Summary.';
 
 function volCell(ea: number, lb: number): ReactNode {
   if (lb === 0) return volume(ea, 'ea');
