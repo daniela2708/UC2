@@ -1,9 +1,20 @@
 import { CATALOG, type ItemFlag, type SubSpec, type Volatility } from './catalog';
 import { AS_OF_DAY, dayFromYMD, formatMonth, globalWeek, weekOfDay, WEEK_COUNT } from './calendar';
-import { hash01, hashNormal } from './prng';
+import { hash01, hashNormal, nameKey } from './prng';
 import type { Uom } from '../lib/kpis';
 
 export const DEPT_NAMES = CATALOG.map((d) => d.name);
+
+/**
+ * A per-department table keyed by department name, in DEPTS order. Throws when a department is missing, so a
+ * catalog change cannot silently shift values onto the wrong department.
+ */
+export function deptTable<T>(table: Readonly<Record<string, T>>, names: readonly string[] = DEPT_NAMES): T[] {
+  return names.map((n) => {
+    if (!Object.prototype.hasOwnProperty.call(table, n)) throw new Error(`Missing department in table: ${n}`);
+    return table[n];
+  });
+}
 export type DeptIdx = number;
 
 export interface Dept {
@@ -94,10 +105,10 @@ export const COST_TYPE_LABEL: Record<CostType, string> = { UPC: 'UPC', PLU: 'PLU
 
 /**
  * Target margin on net sales at the market cost, by department. Calibrated so item-level Gross Margin Rate on
- * Gross Sales at real-time PO cost (freight included) lands at: Meat 31–33 %, Produce 44–48 %, Deli 55–56 %,
+ * Gross Sales at real-time PO cost (freight included) lands at: Produce 44–48 %, Deli 55–56 %,
  * Bakery 58–60 %, Seafood 34–37 %, Floral 60–65 %.
  */
-const DEPT_MARGIN = [0.35, 0.5, 0.59, 0.615, 0.39, 0.65];
+const DEPT_MARGIN = deptTable({ Produce: 0.5, Deli: 0.59, Bakery: 0.615, Seafood: 0.39, Floral: 0.65 });
 const SUB_LOSS: Record<string, number> = {
   Berries: 1.7,
   'Salad greens': 1.4,
@@ -258,8 +269,9 @@ const PLANTED_UPDATE: Record<string, [number, number]> = { '16 in. Pepperoni Piz
 function updateMonth(name: string, i: number): [number, number] {
   if (PLANTED_UPDATE[name]) return PLANTED_UPDATE[name];
   if (/Slice$/.test(name)) return updateMonth(name.replace(/ Slice$/, ''), ITEM_BY_NAME_EARLY.get(name.replace(/ Slice$/, '')) ?? i);
-  const h = hash01(i, 401);
-  const k = hash01(i, 402);
+  // Keyed by recipe name, not item index, so adding or removing a department does not reshuffle recipe ages.
+  const h = hash01(nameKey(name), 401);
+  const k = hash01(nameKey(name), 402);
   if (h < 0.5) return [2026, 4 + Math.floor(k * 6)];
   if (h < 0.9) {
     const m = 10 + Math.floor(k * 6); // 10/2025 … 03/2026
@@ -300,7 +312,7 @@ const KNOWN_PLU: Record<string, string> = {
   Limes: '4048',
   'Avocados Hass': '4225',
 };
-const PLU_PREFIX = ['21', '', '24', '26', '28', '29'];
+const PLU_PREFIX = deptTable({ Produce: '', Deli: '24', Bakery: '26', Seafood: '28', Floral: '29' });
 
 // ---------------------------------------------------------------- Build
 
@@ -310,6 +322,13 @@ export const SUBS: Sub[] = [];
 export const ITEMS: Item[] = [];
 
 const usedCodes = new Set<string>();
+/**
+ * Item codes are identifiers, so they stay as published before Meat left the catalog (UC2 scope): code hashes use
+ * the item and category positions the catalog had then, when Meat's 117 items and 4 categories came first.
+ */
+const LEGACY_ITEM_KEY = 117;
+const LEGACY_CAT_KEY = 4;
+
 function uniqueCode(make: (attempt: number) => string): string {
   for (let a = 0; ; a++) {
     const c = make(a);
@@ -349,22 +368,22 @@ function buildItem(raw: string, ctx: ItemContext): Item {
   const codeType: 'UPC' | 'PLU' = flag === 'e' ? 'UPC' : 'PLU';
   const code = uniqueCode((a) => {
     if (codeType === 'UPC') {
-      const mfr = String(30000 + Math.floor(hash01(cat.idx, 501, a) * 59999)).padStart(5, '0');
-      const item = String(Math.floor(hash01(i, 502, a) * 99999)).padStart(5, '0');
+      const mfr = String(30000 + Math.floor(hash01(cat.idx + LEGACY_CAT_KEY, 501, a) * 59999)).padStart(5, '0');
+      const item = String(Math.floor(hash01(i + LEGACY_ITEM_KEY, 502, a) * 99999)).padStart(5, '0');
       const d11 = `0${mfr}${item}`;
       return `${d11}${upcCheck(d11)}`;
     }
     if (a === 0 && KNOWN_PLU[name]) return KNOWN_PLU[name];
-    if (d === 1) {
-      const base = String(3000 + Math.floor(hash01(i, 503, a) * 2000));
+    if (DEPT_NAMES[d] === 'Produce') {
+      const base = String(3000 + Math.floor(hash01(i + LEGACY_ITEM_KEY, 503, a) * 2000));
       return /^Organic/.test(name) ? `9${base}` : base;
     }
-    return `${PLU_PREFIX[d]}${String(Math.floor(hash01(i, 504, a) * 1000)).padStart(3, '0')}`;
+    return `${PLU_PREFIX[d]}${String(Math.floor(hash01(i + LEGACY_ITEM_KEY, 504, a) * 1000)).padStart(3, '0')}`;
   });
   const vol: Volatility | 'none' =
     flag === 'c' ? 'none' : subSpec.vol ?? (rw ? 'med' : 'step');
   const marginNoise = hashNormal(i, 505) * 0.035;
-  const subLoss = SUB_LOSS[subSpec.name === 'Rolls' && d === 4 ? 'Rolls_Sushi' : subSpec.name] ?? 1;
+  const subLoss = SUB_LOSS[subSpec.name === 'Rolls' && DEPT_NAMES[d] === 'Seafood' ? 'Rolls_Sushi' : subSpec.name] ?? 1;
   const item: Item = {
     idx: i,
     code,
@@ -396,7 +415,7 @@ function buildItem(raw: string, ctx: ItemContext): Item {
     const total = recipe.reduce((a, [, s]) => a + s, 0);
     const [uy, um] = updateMonth(name, i);
     const updatedDay = dayFromYMD(uy, um, 1);
-    item.margin = Math.min(0.66, Math.max(0.42, (d === 2 ? 0.56 : 0.6) + marginNoise));
+    item.margin = Math.min(0.66, Math.max(0.42, (DEPT_NAMES[d] === 'Deli' ? 0.56 : 0.6) + marginNoise));
     const family =
       subSpec.recipe === 'pizza'
         ? 'Pizza & stromboli'
@@ -497,19 +516,18 @@ for (const x of EXTRA_ITEMS) {
 
 /**
  * DSD items: vendors deliver straight to stores and receipts are recorded item by item in Retalix HQ. Picked in
- * subcategories where DSD is usual (bread, packaged cheese, grocery bunches, bacon and hot dogs, bagged
+ * subcategories where DSD is usual (bread, packaged cheese, grocery bunches, bagged
  * salads, sushi), best sellers first, until their cost of goods covers the department's DSD purchases share.
  */
 const DSD_SUBS: Record<string, string[]> = {
   Bakery: ['Breads', 'Rolls', 'Bagels & English muffins'],
   Deli: ['Sliced cheese', 'Specialty cheese'],
   Floral: ['Grocery bunches'],
-  Meat: ['Bacon', 'Hot dogs & smoked sausage'],
   Produce: ['Bagged greens', 'Salad kits'],
   Seafood: ['Rolls'],
 };
 /** DSD purchases as a share of department sales (Fresh Report), over the cost-to-sales ratio. */
-const DSD_COST_SHARE: Record<string, number> = { Meat: 0.045, Produce: 0.1, Deli: 0.16, Bakery: 0.36, Seafood: 0.07, Floral: 0.15 };
+const DSD_COST_SHARE: Record<string, number> = { Produce: 0.1, Deli: 0.16, Bakery: 0.36, Seafood: 0.07, Floral: 0.15 };
 
 for (const dept of DEPTS) {
   const subs = DSD_SUBS[dept.name] ?? [];

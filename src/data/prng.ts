@@ -36,6 +36,16 @@ export function hash01(a: number, b = 0, c = 0, d = 0): number {
   return (h >>> 0) / 4294967296;
 }
 
+/** Stable 32-bit key for a string (FNV-1a), so noise keyed by name survives catalog changes. */
+export function nameKey(s: string): number {
+  let h = 0x811c9dc5;
+  for (let k = 0; k < s.length; k++) {
+    h ^= s.charCodeAt(k);
+    h = Math.imul(h, 0x01000193);
+  }
+  return h | 0;
+}
+
 /** Bounded, roughly normal noise with mean 0 and sd 1 (range −3…3). */
 export function hashNormal(a: number, b = 0, c = 0, d = 0): number {
   return (hash01(a, b, c, d) + hash01(a, b, c, d + 7919) + hash01(a, b, c, d + 15887) - 1.5) * 2;

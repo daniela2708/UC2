@@ -20,7 +20,7 @@ import {
   type HolidayId,
 } from './calendar';
 import { hash01, hashNormal, hashSigned } from './prng';
-import { BASE_ITEM_COUNT, CATS, DEPTS, ingredientUnitCost, ITEMS, recipeCostAt, roundQty, type Item } from './products';
+import { BASE_ITEM_COUNT, CATS, deptTable, DEPTS, ingredientUnitCost, ITEMS, recipeCostAt, roundQty, type Item } from './products';
 import { isOpen, STORE_BY_ID, STORES } from './stores';
 import { EXTREME_ENTRY_DOLLARS, PLANTED } from './planted';
 import { PURCHASE_CHANNELS, type PurchaseBreakdown } from '../lib/kpis';
@@ -33,31 +33,33 @@ export const NS = STORES.length;
 export const NDP = DEPTS.length;
 
 /** Weekly chain gross sales in FY2024 before seasonality, by department. */
-const BASE_WEEKLY = [8_200_000, 6_900_000, 4_050_000, 2_400_000, 1_520_000, 800_000];
-const DISCOUNT = [0.019, 0.016, 0.017, 0.018, 0.02, 0.015];
+const BASE_WEEKLY = deptTable({ Produce: 6_900_000, Deli: 4_050_000, Bakery: 2_400_000, Seafood: 1_520_000, Floral: 800_000 });
+const DISCOUNT = deptTable({ Produce: 0.016, Deli: 0.017, Bakery: 0.018, Seafood: 0.02, Floral: 0.015 });
 /** Known loss at cost, % of sales. */
-const LOSS_RATE = [0.019, 0.028, 0.055, 0.018, 0.046, 0.06];
-const DONATION_RATE = [0.002, 0.006, 0.005, 0.02, 0.001, 0.003];
-const SALVAGE_RATE = [0.0015, 0.003, 0.001, 0.0005, 0.001, 0.002];
-const MARKDOWN_RATE = [0.015, 0.004, 0.005, 0.006, 0.004, 0.003];
+const LOSS_RATE = deptTable({ Produce: 0.028, Deli: 0.055, Bakery: 0.018, Seafood: 0.046, Floral: 0.06 });
+const DONATION_RATE = deptTable({ Produce: 0.006, Deli: 0.005, Bakery: 0.02, Seafood: 0.001, Floral: 0.003 });
+const SALVAGE_RATE = deptTable({ Produce: 0.003, Deli: 0.001, Bakery: 0.0005, Seafood: 0.001, Floral: 0.002 });
+const MARKDOWN_RATE = deptTable({ Produce: 0.004, Deli: 0.005, Bakery: 0.006, Seafood: 0.004, Floral: 0.003 });
 /** Known loss at retail ÷ known loss at cost. */
-export const RETAIL_LOSS_FACTOR = [1.85, 1.9, 2.0, 2.0, 1.8, 1.95];
+export const RETAIL_LOSS_FACTOR = deptTable({ Produce: 1.9, Deli: 2.0, Bakery: 2.0, Seafood: 1.8, Floral: 1.95 });
 const DOW_PROFILE = [0.155, 0.125, 0.12, 0.13, 0.14, 0.155, 0.175];
 
 /** Department holiday multipliers (Thanksgiving +35 %, Christmas +30 %, Valentine's ×3 for Floral …). */
+const holidayRow = (v: number[]) => deptTable(Object.fromEntries(['Produce', 'Deli', 'Bakery', 'Seafood', 'Floral'].map((n, k) => [n, v[k]])));
 const DEPT_HOLIDAY: Record<string, number[]> = {
-  thanksgiving: [1.45, 1.35, 1.25, 1.5, 1.15, 1.25],
-  christmasEve: [1.3, 1.28, 1.32, 1.35, 1.45, 1.3],
-  newYear: [1.1, 1.08, 1.15, 1.05, 1.2, 1.0],
-  easter: [1.25, 1.15, 1.12, 1.2, 1.1, 1.6],
-  july4: [1.15, 1.15, 1.08, 1.08, 1.02, 1.0],
-  memorial: [1.15, 1.15, 1.06, 1.05, 1.0, 1.15],
-  laborday: [1.12, 1.08, 1.05, 1.03, 1.0, 1.0],
-  halloween: [1.0, 1.03, 1.0, 1.1, 1.0, 1.05],
-  valentinesDay: [1.04, 1.02, 1.0, 1.1, 1.15, 3.0],
-  superBowl: [1.05, 1.04, 1.15, 1.03, 1.03, 1.0],
-  mothersday: [1.03, 1.02, 1.02, 1.08, 1.02, 2.5],
-  backtoschool: [1.0, 1.02, 1.05, 1.04, 1.0, 1.0],
+  //                    Produce Deli Bakery Seafood Floral
+  thanksgiving: holidayRow([1.35, 1.25, 1.5, 1.15, 1.25]),
+  christmasEve: holidayRow([1.28, 1.32, 1.35, 1.45, 1.3]),
+  newYear: holidayRow([1.08, 1.15, 1.05, 1.2, 1.0]),
+  easter: holidayRow([1.15, 1.12, 1.2, 1.1, 1.6]),
+  july4: holidayRow([1.15, 1.08, 1.08, 1.02, 1.0]),
+  memorial: holidayRow([1.15, 1.06, 1.05, 1.0, 1.15]),
+  laborday: holidayRow([1.08, 1.05, 1.03, 1.0, 1.0]),
+  halloween: holidayRow([1.03, 1.0, 1.1, 1.0, 1.05]),
+  valentinesDay: holidayRow([1.02, 1.0, 1.1, 1.15, 3.0]),
+  superBowl: holidayRow([1.04, 1.15, 1.03, 1.03, 1.0]),
+  mothersday: holidayRow([1.02, 1.02, 1.08, 1.02, 2.5]),
+  backtoschool: holidayRow([1.02, 1.05, 1.04, 1.0, 1.0]),
 };
 
 // ---------------------------------------------------------------- Week helpers
@@ -143,16 +145,14 @@ function tagMultiplier(item: Item, w: number): number {
 
 function deptSeasonal(d: number, w: number): number {
   const woy = w % 52;
-  switch (d) {
-    case 0:
-      return 1 + 0.06 * bump(woy, 26, 14) - 0.03 * bump(woy, 5, 5);
-    case 1:
+  switch (DEPTS[d].name) {
+    case 'Produce':
       return 1 + 0.09 * bump(woy, 27, 14) - 0.04 * bump(woy, 3, 6);
-    case 2:
+    case 'Deli':
       return 1 + 0.03 * bump(woy, 4, 8);
-    case 3:
+    case 'Bakery':
       return 1 + 0.05 * bump(woy, 48, 6);
-    case 4:
+    case 'Seafood':
       return (HOLIDAY_SETS.lent[w] ? 1.12 : 1) - 0.03 * bump(woy, 30, 8);
     default:
       return 1 + 0.1 * bump(woy, 16, 8);
@@ -160,18 +160,20 @@ function deptSeasonal(d: number, w: number): number {
 }
 
 /** Loss runs high after holidays (unsold seasonal stock), around Valentine's for Floral and in summer heat for Produce. */
+const LOSS_AFTER_NAMES = ['Produce', 'Deli', 'Bakery', 'Seafood', 'Floral'];
+const lossAfter = (v: number[]) => deptTable(Object.fromEntries(LOSS_AFTER_NAMES.map((n, k) => [n, v[k]])));
 const LOSS_AFTER: [string, number[]][] = [
-  //                Meat Produce Deli Bakery Seafood Floral
-  ['thanksgiving', [1.5, 1.4, 1.4, 1.9, 1.3, 1.6]],
-  ['christmasEve', [1.35, 1.3, 1.45, 1.6, 1.5, 1.5]],
-  ['newYear', [1.2, 1.15, 1.3, 1.3, 1.3, 1.2]],
-  ['valentinesDay', [1.0, 1.0, 1.0, 1.3, 1.15, 2.4]],
-  ['easter', [1.4, 1.1, 1.2, 1.4, 1.1, 1.8]],
-  ['mothersday', [1.0, 1.0, 1.0, 1.2, 1.0, 1.9]],
-  ['july4', [1.3, 1.3, 1.15, 1.1, 1.0, 1.0]],
-  ['memorial', [1.2, 1.2, 1.1, 1.05, 1.0, 1.2]],
-  ['laborday', [1.2, 1.15, 1.1, 1.05, 1.0, 1.0]],
-  ['halloween', [1.0, 1.05, 1.0, 1.5, 1.0, 1.1]],
+  //                          Produce Deli Bakery Seafood Floral
+  ['thanksgiving', lossAfter([1.4, 1.4, 1.9, 1.3, 1.6])],
+  ['christmasEve', lossAfter([1.3, 1.45, 1.6, 1.5, 1.5])],
+  ['newYear', lossAfter([1.15, 1.3, 1.3, 1.3, 1.2])],
+  ['valentinesDay', lossAfter([1.0, 1.0, 1.3, 1.15, 2.4])],
+  ['easter', lossAfter([1.1, 1.2, 1.4, 1.1, 1.8])],
+  ['mothersday', lossAfter([1.0, 1.0, 1.2, 1.0, 1.9])],
+  ['july4', lossAfter([1.3, 1.15, 1.1, 1.0, 1.0])],
+  ['memorial', lossAfter([1.2, 1.1, 1.05, 1.0, 1.2])],
+  ['laborday', lossAfter([1.15, 1.1, 1.05, 1.0, 1.0])],
+  ['halloween', lossAfter([1.05, 1.0, 1.5, 1.0, 1.1])],
 ];
 const LOSS_SEASON = (() => {
   const raw = new Float64Array(NDP * NW);
@@ -179,10 +181,11 @@ const LOSS_SEASON = (() => {
     for (let w = 0; w < NW; w++) {
       let m = 1;
       for (const [h, mult] of LOSS_AFTER) if (w > 0 && HOLIDAY_SETS[h][w - 1]) m *= mult[d];
-      if (d === 5 && HOLIDAY_SETS.valentinesDay[w]) m *= 1.4;
-      if (d === 1) m *= 1 + 0.35 * bump(w % 52, 29, 8);
-      if (d === 2) m *= 1 + 0.1 * bump(w % 52, 29, 8);
-      if (d === 4) m *= 1 + 0.12 * bump(w % 52, 29, 7);
+      const dn = DEPTS[d].name;
+      if (dn === 'Floral' && HOLIDAY_SETS.valentinesDay[w]) m *= 1.4;
+      if (dn === 'Produce') m *= 1 + 0.35 * bump(w % 52, 29, 8);
+      if (dn === 'Deli') m *= 1 + 0.1 * bump(w % 52, 29, 8);
+      if (dn === 'Seafood') m *= 1 + 0.12 * bump(w % 52, 29, 7);
       raw[d * NW + w] = m;
     }
     let mean = 0;
@@ -392,7 +395,7 @@ export function buildModel(): Model {
         lossCost[k] = Math.max(0, weekSales * lossRate * LOSS_SEASON[d * NW + w] * (1 + 0.12 * hashNormal(i, w, 109)));
         donations[k] = weekSales * DONATION_RATE[d] * (0.6 + 0.8 * hash01(i, 110));
         salvage[k] = weekSales * SALVAGE_RATE[d] * (0.5 + hash01(i, 111));
-        const md = d === 0 ? 0.005 + 0.02 * hash01(d, w, 112) : MARKDOWN_RATE[d] * (0.6 + 0.8 * hash01(d, w, 112));
+        const md = MARKDOWN_RATE[d] * (0.6 + 0.8 * hash01(d, w, 112));
         markdown[k] = weekSales * md * (0.7 + 0.6 * hash01(i, 113));
       }
     }
@@ -675,17 +678,16 @@ export { EXTREME_ENTRY_DOLLARS };
 // ---------------------------------------------------------------- Fresh Report purchases
 
 const PURCHASE_BASE: Record<string, number[]> = {
-  //            Meat    Produce Deli    Bakery  Seafood Floral
-  whse: [0.69, 0.55, 0.46, 0.3, 0.66, 0.38],
-  dsd: [0.03, 0.05, 0.07, 0.14, 0.04, 0.05],
-  packaging: [0.012, 0.008, 0.03, 0.035, 0.01, 0.02],
-  reclaim: [0.001, 0.001, 0.001, 0.001, 0.001, 0.0005],
-  donations: [0.002, 0.006, 0.005, 0.02, 0.001, 0.003],
-  wcCredit: [-0.004, -0.003, -0.002, -0.002, -0.002, -0.002],
-  scanCredit: [-0.02, -0.006, -0.008, -0.004, -0.01, -0.002],
+  whse: deptTable({ Produce: 0.55, Deli: 0.46, Bakery: 0.3, Seafood: 0.66, Floral: 0.38 }),
+  dsd: deptTable({ Produce: 0.05, Deli: 0.07, Bakery: 0.14, Seafood: 0.04, Floral: 0.05 }),
+  packaging: deptTable({ Produce: 0.008, Deli: 0.03, Bakery: 0.035, Seafood: 0.01, Floral: 0.02 }),
+  reclaim: deptTable({ Produce: 0.001, Deli: 0.001, Bakery: 0.001, Seafood: 0.001, Floral: 0.0005 }),
+  donations: deptTable({ Produce: 0.006, Deli: 0.005, Bakery: 0.02, Seafood: 0.001, Floral: 0.003 }),
+  wcCredit: deptTable({ Produce: -0.003, Deli: -0.002, Bakery: -0.002, Seafood: -0.002, Floral: -0.002 }),
+  scanCredit: deptTable({ Produce: -0.006, Deli: -0.008, Bakery: -0.004, Seafood: -0.01, Floral: -0.002 }),
 };
 /** Week-to-week swing of in-transit timing (telescopes over a period), by department. */
-const BUDGET_GP = [0.292, 0.361, 0.427, 0.513, 0.278, 0.4];
+const BUDGET_GP = deptTable({ Produce: 0.361, Deli: 0.427, Bakery: 0.513, Seafood: 0.278, Floral: 0.4 });
 const SEAFOOD_SQUEEZE_WHSE = 0.026;
 
 /** Purchases by channel as fractions of the department-store-week's sales. */
@@ -711,7 +713,7 @@ export function purchaseFractions(d: number, s: number, w: number, out: Purchase
   out.donations = PURCHASE_BASE.donations[d] * (0.7 + 0.6 * hash01(d, st.id, w, 408));
   out.wcCredit = PURCHASE_BASE.wcCredit[d] * (0.5 + hash01(d, st.id, w, 409));
   out.scanCredit = PURCHASE_BASE.scanCredit[d] * (0.8 + 0.4 * hash01(d, st.id, w, 410));
-  if (d === 4 && w >= PLANTED.shrimpSqueeze.fromWeek) out.whse += SEAFOOD_SQUEEZE_WHSE;
+  if (DEPTS[d].name === PLANTED.shrimpSqueeze.dept && w >= PLANTED.shrimpSqueeze.fromWeek) out.whse += SEAFOOD_SQUEEZE_WHSE;
   const o = PLANTED.storeOutlier;
   if (st.id === o.store && DEPTS[d].name === o.dept && w >= o.fromWeek && w <= o.toWeek) {
     out.whse = PURCHASE_BASE.whse[d] + 0.011 + o.whseLift;
@@ -732,8 +734,8 @@ export function emptyBreakdown(): PurchaseBreakdown {
  * holidays are stocked the week before, and deliveries land unevenly (a chain-wide warehouse rhythm plus
  * store-level noise). Both noise terms telescope, so over a period purchases still match sales.
  */
-const TIMING_CHAIN = [0.07, 0.055, 0.075, 0.07, 0.07, 0.2];
-const TIMING_STORE = [0.12, 0.09, 0.1, 0.09, 0.11, 0.33];
+const TIMING_CHAIN = deptTable({ Produce: 0.055, Deli: 0.075, Bakery: 0.07, Seafood: 0.07, Floral: 0.2 });
+const TIMING_STORE = deptTable({ Produce: 0.09, Deli: 0.1, Bakery: 0.09, Seafood: 0.11, Floral: 0.33 });
 export const PURCHASE_LEAD = 0.55;
 export function purchaseTiming(d: number, s: number, w: number): number {
   const id = STORES[s].id;

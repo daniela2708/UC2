@@ -33,13 +33,13 @@ export const PLANTED = {
     retailFrozenFrom: globalWeek(2026, 14),
     costLift: 0.18,
   },
-  /** 5. Store 154 Meat runs about 8 pts below budget for 4 weeks, driven by DSD. */
+  /** 5. Store 154 Produce runs well below budget for 4 weeks, driven by DSD. */
   storeOutlier: {
     store: 154,
-    dept: 'Meat',
+    dept: 'Produce',
     fromWeek: globalWeek(2026, 39),
     toWeek: globalWeek(2026, 42),
-    dsdShare: 0.09,
+    dsdShare: 0.15,
     whseLift: 0,
   },
   /** Deli soup entry error: store 116 sold 1 unit and scanned out 4,000 in W40. */

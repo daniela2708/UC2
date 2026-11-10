@@ -625,7 +625,7 @@ export function fromQuery(query: string): FilterState {
   if (elRaw && elRaw.length <= 300)
     for (const part of elRaw.split(';')) {
       const [d, v] = part.split(':');
-      if (!(d in DEFAULT_EXPECTED_LOSS) || !v || !/^\d{1,3}(\.\d)?$/.test(v)) continue;
+      if (!Object.prototype.hasOwnProperty.call(DEFAULT_EXPECTED_LOSS, d) || !v || !/^\d{1,3}(\.\d)?$/.test(v)) continue;
       const r = clampExpectedLoss(Number(v) / 100);
       if (r !== null) s.expLoss[d] = r;
     }

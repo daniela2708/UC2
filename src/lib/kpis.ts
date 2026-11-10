@@ -392,7 +392,7 @@ export function simulateCostChange(x: SimInputs): SimResult {
 // ---------------------------------------------------------------- Margin after loss (Proposed)
 
 /** Expected total loss rates the Deli team subtracts from gross profit today (Proposed defaults), by department order. */
-export const DEFAULT_EXPECTED_LOSS: Record<string, number> = { Meat: 0.04, Produce: 0.08, Deli: 0.12, Bakery: 0.09, Seafood: 0.08, Floral: 0.08 };
+export const DEFAULT_EXPECTED_LOSS: Record<string, number> = { Produce: 0.08, Deli: 0.12, Bakery: 0.09, Seafood: 0.08, Floral: 0.08 };
 export const EXPECTED_LOSS_LIMITS = { min: 0, max: 0.3 } as const;
 
 /** Clamps an expected loss rate to 0–30 %. Non-numbers fall back to null. */

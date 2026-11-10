@@ -48,6 +48,8 @@ The tab bar holds the five views the workbook requires, in the order agreed afte
 
 **Known Loss Report scope (TBD).** The team agreed that shrink may become a separate use case. The Known Loss Report may move to a separate use case or a later wave; the MVP focuses on item cost; whether ingredient costing is in the MVP is to confirm with the business (#44). The High Loss Flag remains a required KPI in Category-Item Summary.
 
+**Meat is out of scope.** The Meat department is not part of UC2, so the dashboard covers five fresh departments: Produce, Deli, Bakery, Seafood and Floral. The legacy Fresh Report and EASS1048 include Meat (02-MEAT), so department totals compare one to one but company totals will not tie to those reports. That difference is expected. Deli and Seafood items with meat in the name (for example 16 in. Meat Lovers Pizza, Meatloaf Dinner, Lump Crab Meat) and recipe ingredients such as sausage and deli meats stay.
+
 ### How each user story is satisfied
 
 | # | User story (summary) | Metrics | Filters | View | Lowest grain | Refresh |
@@ -161,19 +163,18 @@ Everything is generated in the browser at startup from a fixed seed, **`20261018
   - Most items cost more on POs than the simulated HQ cost, partly because of freight (it is excluded).
   - About 27 % cost less, because the simulated HQ cost was set at a seasonal or commodity high.
 - **UPC items:** come from the Weis distribution center at their average cost.
-- **DSD items** (about 11 % of fresh items: mostly Bakery bread, rolls and bagels; also packaged Deli cheese, grocery bunches, bacon and hot dogs, bagged salads, sushi):
+- **DSD items** (about 13 % of fresh items: mostly Bakery bread, rolls and bagels; also packaged Deli cheese, grocery bunches, bagged salads, sushi):
   - Delivered straight to stores. No Biceps PO; receipts are recorded item by item in Retalix HQ at the receipt cost.
   - Each department-store-week's DSD purchases (the Fresh Report DSD line) are split across its DSD items by their cost of goods sold, so the items add up exactly to the department.
 - **Composite PLUs:** costed from recipes in real quantities.
   - Pizza dough ball, shredded mozzarella and pizza sauce are shared by every pizza and stromboli; pepperoni by seven PLUs. Slices take the pie's recipe ÷ 8.
   - The HQ standard cost is the recipe at ingredient costs in the month it was last costed.
-  - About 60 % of recipes are older than 6 months and about one in ten older than a year.
+  - About 60 % of recipes are older than 6 months and about one in seven older than a year. Recipe ages are keyed by recipe name, so catalog changes do not reshuffle them.
 
 **Calibration.**
 
 | Department | Item-level Gross Margin Rate (target band) | Fresh Report Gross Margin Rate |
 |---|---|---|
-| Meat | 32 % (30–35 %) | 27–30 % |
 | Produce | 47 % (45–50 %) | 37–40 % |
 | Deli | 56 % (53–58 %) | 42–44 % |
 | Bakery | 58 % (56–61 %) | 49–51 % |
@@ -185,7 +186,7 @@ Everything is generated in the browser at startup from a fixed seed, **`20261018
 - Districts range about −3 to +3 pts versus budget.
 - Each store has its own loss factor by department (0.6–1.6×).
 - Loss spikes after holidays.
-- About 30 % of flags are likely entry errors.
+- About 15 % of flags are likely entry errors.
 
 Horizon: FY2024 (starts Sun 12/31/2023) to FY2026 to date, as of **Sun 10/18/2026 (FY2026 W43)**. Weekly sources stop at the last complete week, W42. Filter changes re-render in under 300 ms on a laptop; the first load builds the purchase orders and takes about half a second.
 
@@ -196,11 +197,11 @@ Horizon: FY2024 (starts Sun 12/31/2023) to FY2026 to date, as of **Sun 10/18/202
 | **Roma tomatoes 25 lb case:** $19.95 normally; a glut drops it to $4.95 in FY2026 W35, a spike takes it to $44.95 in W36, and it is back to normal by W39. HQ holds $19.45. | Default item in Item Cost Over Time (Week and Fiscal period). |
 | **Pie pumpkin bins:** $150 per bin in HQ, $250 per bin on POs in season (W36–W42). The largest gap between PO and HQ cost of any item. | Item Cost Over Time (pick Pie Pumpkins). |
 | **16 in. Pepperoni Pizza:** recipe last costed 03/2025 at $4.85. The same recipe at today's ingredient costs is $5.66 (box +32 %, dough +18 %, mozzarella and pepperoni +12 %), so margin is about 8 pts too high. | Default PLU in the Ingredients View; the largest recipe cost gap. |
-| **Where used:** pizza dough ball is in 13 PLUs. At $0.85 / lb instead of $0.70, the annual cost change is +$439K and the margin impact −$439K. | Ingredients View › Where used. |
+| **Where used:** pizza dough ball is in 13 PLUs. At $0.85 / lb instead of $0.70, the annual cost change is +$441.5K and the margin impact −$441.5K. | Ingredients View › Where used. |
 | **Deli soup:** store 116 sold 1 unit and scanned out 4,000 in FY2026 W40. It is a likely entry error (Known Loss Report scope TBD). | Known Loss Report (flagged entries, store table with the SKU); Add to IT Review List and Export list for IT. |
 | **Salmon fat-finger:** store 152, W38, 1,110 lb instead of about 15 lb, worth $11,700. | Known Loss Report, flagged entries. |
 | **Strawberries $8.9M:** store 217, W29, above the $100,000 plausibility cap. | Banner; excluded from totals by default. |
-| **Store 154 DSD:** Meat about 7 pts below budget over W39–W42, with DSD at 9 % of sales. | "Below budget" banner in the Fresh Report. |
+| **Store 154 DSD:** Produce about 7 pts below budget over W39–W42, with DSD at 15 % of sales. | "Below budget" banner in the Fresh Report. |
 | **Shrimp cost squeeze:** cost up about 20 % since FY2026 P8 with retail flat. | "Cost pressure" banner in Category-Item Summary (Seafood). |
 | **Incomplete reporting:** stores 213, 386 and 290 posted no known loss for W42. | Known Loss Report banner. |
 

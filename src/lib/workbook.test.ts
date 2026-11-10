@@ -246,11 +246,11 @@ describe('High Loss Flag tiers at the boundaries', () => {
   it('every flag in the data is above $1,000 for one item-store-week', () => {
     for (const f of findFlags(buildScope(DEFAULT_STATE, ytd))) expect(f.cost).toBeGreaterThan(1000);
   });
-  it('about 30 % of flags are likely entry errors, and the salmon fat-finger tops the list', () => {
+  it('about 10–25 % of flags are likely entry errors, and the salmon fat-finger tops the list', () => {
     const flags = findFlags(buildScope(DEFAULT_STATE, ytd));
     const share = flags.filter(isEntryError).length / flags.length;
-    expect(share).toBeGreaterThan(0.2);
-    expect(share).toBeLessThan(0.4);
+    expect(share).toBeGreaterThan(0.1);
+    expect(share).toBeLessThan(0.25);
     expect(ITEMS[flags.filter((f) => !f.extreme)[0].item].name).toBe(PLANTED.fatFinger.item);
   });
   it('the Deli soup entry (store 116, W40) is a likely entry error', () => {
@@ -269,33 +269,33 @@ describe('Fresh Report', () => {
     const w = globalWeek(2026, 41);
     const days = Array.from({ length: 7 }, (_, k) => weekStartDay(w) + k);
     let byDay = 0;
-    for (const row of freshStoreDays(scope, [dept('Meat')], days).values()) for (const c of row) byDay += totalPurchases(c.purchases);
+    for (const row of freshStoreDays(scope, [dept('Produce')], days).values()) for (const c of row) byDay += totalPurchases(c.purchases);
     let byWeek = 0;
-    for (const row of freshStoreWeeks(scope, [dept('Meat')], [w]).values()) byWeek += totalPurchases(row[0].purchases);
+    for (const row of freshStoreWeeks(scope, [dept('Produce')], [w]).values()) byWeek += totalPurchases(row[0].purchases);
     expect(byDay / byWeek).toBeCloseTo(1, 6);
   });
   it('respects Category and Subcategory; SKU stays disabled', () => {
     expect(unusedFilters('fresh').sku).toBeTruthy();
     expect(unusedFilters('fresh').product).toBeUndefined();
-    const meat = dept('Meat');
+    const produce = dept('Produce');
     const w = [globalWeek(2026, 40)];
     const sum = (s: typeof DEFAULT_STATE) => {
       let t = 0;
-      for (const row of freshStoreWeeks(buildScope(s, ytd, { noItem: true }), [meat], w).values()) t += totalPurchases(row[0].purchases);
+      for (const row of freshStoreWeeks(buildScope(s, ytd, { noItem: true }), [produce], w).values()) t += totalPurchases(row[0].purchases);
       return t;
     };
-    const whole = sum({ ...DEFAULT_STATE, dept: meat });
-    const parts = DEPTS[meat].cats.map((c) => sum({ ...DEFAULT_STATE, dept: meat, cat: c }));
+    const whole = sum({ ...DEFAULT_STATE, dept: produce });
+    const parts = DEPTS[produce].cats.map((c) => sum({ ...DEFAULT_STATE, dept: produce, cat: c }));
     expect(parts.reduce((a, b) => a + b, 0) / whole).toBeCloseTo(1, 9);
     expect(Math.max(...parts)).toBeLessThan(whole);
-    const cat = DEPTS[meat].cats[0];
-    const subs = CATS[cat].subs.map((s) => sum({ ...DEFAULT_STATE, dept: meat, cat, sub: s }));
+    const cat = DEPTS[produce].cats[0];
+    const subs = CATS[cat].subs.map((s) => sum({ ...DEFAULT_STATE, dept: produce, cat, sub: s }));
     expect(subs.reduce((a, b) => a + b, 0) / parts[0]).toBeCloseTo(1, 6);
   });
   it('weekly Gross Margin Rate moves about 4–12 pts week to week, and period to date stays in range', () => {
     const scope = buildScope(DEFAULT_STATE, ytd, { deptOnly: true });
     const weeks = Array.from({ length: 30 }, (_, k) => globalWeek(2026, 12 + k));
-    const ranges: Record<string, [number, number]> = { Meat: [26, 31], Produce: [36, 41], Deli: [41, 46], Bakery: [48, 52], Seafood: [24, 33], Floral: [48, 62] };
+    const ranges: Record<string, [number, number]> = { Produce: [36, 41], Deli: [41, 46], Bakery: [48, 52], Seafood: [24, 33], Floral: [48, 62] };
     for (const [name, [lo, hi]] of Object.entries(ranges)) {
       const rows = freshStoreWeeks(scope, [dept(name)], weeks);
       let S = 0;
@@ -417,7 +417,7 @@ describe('input clamps and URL state', () => {
     expect(s.cols.items).toEqual(['gross', 'gmr']);
     expect(s.cols.BAD).toBeUndefined();
     expect(s.expLoss.Deli).toBe(0.3);
-    expect(s.expLoss.Meat).toBe(DEFAULT_STATE.expLoss.Meat);
+    expect(Object.prototype.hasOwnProperty.call(s.expLoss, 'Meat')).toBe(false);
   });
 });
 
@@ -700,10 +700,10 @@ describe('DSD items (receipts in Retalix HQ)', () => {
     for (const row of freshStoreWeeks(sc, [d], weeks).values()) for (const c of row) t += c.purchases.dsd;
     return t;
   };
-  it('about 5–12 % of fresh items are DSD, mostly Bakery bread, with no Biceps POs', () => {
+  it('about 5–14 % of fresh items are DSD, mostly Bakery bread, with no Biceps POs', () => {
     const dsd = ITEMS.filter((x) => x.dsd);
     expect(dsd.length / ITEMS.length).toBeGreaterThan(0.05);
-    expect(dsd.length / ITEMS.length).toBeLessThan(0.12);
+    expect(dsd.length / ITEMS.length).toBeLessThan(0.14);
     const bakery = dsd.filter((x) => DEPTS[x.dept].name === 'Bakery').length;
     expect(bakery).toBeGreaterThanOrEqual(Math.max(...DEPTS.map((d) => dsd.filter((x) => x.dept === d.idx).length)));
     for (const it of dsd) {

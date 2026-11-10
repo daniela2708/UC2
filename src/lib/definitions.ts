@@ -22,6 +22,9 @@ const EASS = 'EASS1048 Category Cost Report';
 const FRESH = 'Fresh Report (Accounting, Excel)';
 const KL = 'KL1011 Dept Known Loss by Item (WebFocus)';
 const BICEPS = 'Biceps ordering system (purchase orders)';
+/** Meat is out of scope for UC2; the legacy reports include it. */
+const NO_MEAT =
+  'Meat (02-MEAT) is out of scope for UC2, while EASS1048 and the legacy Fresh Report include it, so company totals will not tie to them: an expected difference. Compare by department.';
 const CI: ViewName = 'Category-Item Summary';
 const IC: ViewName = 'Item Cost Over Time';
 const FR: ViewName = 'Fresh Report';
@@ -36,7 +39,7 @@ export const KPI_DEFINITIONS: KpiDefinition[] = [
     definition: 'Sales prior to discounts.',
     formula: 'Σ sales before discounts',
     source: `${EASS} · Category Analyzer`,
-    reconciliation: 'Department weekly gross sales match EASS1048 within ±0.5 %.',
+    reconciliation: `Department weekly gross sales match EASS1048 within ±0.5 %. ${NO_MEAT}`,
     status: 'Draft',
     priority: 'Must',
     views: [CI, FR],
@@ -49,7 +52,7 @@ export const KPI_DEFINITIONS: KpiDefinition[] = [
     definition: 'Sales after discounts. At item level, discounts are allocated pro rata to gross sales (provisional rule).',
     formula: 'Gross Sales + Discounts (discounts are negative)',
     source: EASS,
-    reconciliation: 'Department net sales match EASS1048; item-level allocation is not yet reconciled.',
+    reconciliation: `Department net sales match EASS1048; item-level allocation is not yet reconciled. ${NO_MEAT}`,
     status: 'Pending validation',
     priority: 'Must',
     views: [CI, FR],
@@ -111,7 +114,7 @@ export const KPI_DEFINITIONS: KpiDefinition[] = [
       'Store-level purchases from the Workday general ledger, as in the legacy Fresh Report (#5): Whse, DSD, Packaging, Reclaim, Transfers, In transit, Donations, WC credit, Scan credit. Outside-vendor (C&S) cases are a known gap (#6).',
     formula: 'Σ purchase channels by store, department and week',
     source: `Workday general ledger · ${FRESH}`,
-    reconciliation: 'Equals the Fresh Report purchases per store, department and week.',
+    reconciliation: `Equals the Fresh Report purchases per store, department and week. ${NO_MEAT}`,
     status: 'Draft',
     priority: 'Must',
     views: [FR],
@@ -153,7 +156,7 @@ export const KPI_DEFINITIONS: KpiDefinition[] = [
     definition: 'Cost of the units sold under the selected cost basis ("Cost includes").',
     formula: 'Σ units sold × net cost per unit (week by week, as costs change weekly)',
     source: EASS,
-    reconciliation: 'Department cost of goods sold within ±1 % of EASS1048.',
+    reconciliation: `Department cost of goods sold within ±1 % of EASS1048. ${NO_MEAT}`,
     status: 'Proposed',
     priority: 'Must',
     views: [CI],
@@ -177,7 +180,7 @@ export const KPI_DEFINITIONS: KpiDefinition[] = [
     definition: 'Total gross margin. In Category-Item Summary: Net Sales − Total Net Cost. In the Fresh Report: gross profit, Gross Sales − Total Purchases.',
     formula: 'Net Sales − Total Net Cost (item) ; Gross Sales − Total Purchases (Fresh)',
     source: `${EASS} · ${FRESH}`,
-    reconciliation: 'Item: within ±1 % of EASS1048. Fresh: equals the Fresh Report gross profit.',
+    reconciliation: `Item: within ±1 % of EASS1048. Fresh: equals the Fresh Report gross profit. ${NO_MEAT}`,
     status: 'Draft',
     priority: 'Must',
     views: [CI, FR],
@@ -189,7 +192,7 @@ export const KPI_DEFINITIONS: KpiDefinition[] = [
     definition: 'Gross margin as a share of gross sales. Always a ratio of totals. A Net Sales denominator is available as a proposed option.',
     formula: 'SUM(Gross Margin) ÷ SUM(Gross Sales)',
     source: EASS,
-    reconciliation: 'Department rate within ±0.3 pts of EASS1048.',
+    reconciliation: `Department rate within ±0.3 pts of EASS1048. ${NO_MEAT}`,
     status: 'Pending validation',
     priority: 'Must',
     views: [CI, FR],
@@ -201,7 +204,7 @@ export const KPI_DEFINITIONS: KpiDefinition[] = [
     definition: "Accounting's Fresh Report gross profit rate. It includes loss and inventory timing by construction, so it reads 8–13 pts below item-level margin. Weekly values swing because purchases do not line up with sales; read it by week or period to date.",
     formula: '(Gross Sales − Total Purchases) ÷ Gross Sales',
     source: FRESH,
-    reconciliation: "Equals Accounting's Fresh Report GP % per store and department.",
+    reconciliation: `Equals Accounting's Fresh Report GP % per store and department. ${NO_MEAT}`,
     status: 'Draft',
     priority: 'Must',
     views: [FR],
@@ -213,7 +216,7 @@ export const KPI_DEFINITIONS: KpiDefinition[] = [
     definition: 'Budgeted Fresh Report GP % by department, store and fiscal period, weighted by sales.',
     formula: 'Σ (Sales × Budget GP %) ÷ Σ Sales',
     source: `${FRESH} (budget tab)`,
-    reconciliation: 'Matches the Fresh Report budget column.',
+    reconciliation: `Matches the Fresh Report budget column. ${NO_MEAT}`,
     status: 'Draft',
     views: [FR],
   },
@@ -341,7 +344,7 @@ KPI_DEFINITIONS.push(
     id: 'margin-after-loss',
     name: 'Margin After Loss %',
     unit: '%',
-    definition: 'Gross Margin Rate less a loss rate: actual known loss ÷ sales, or the expected total loss rate the Deli team uses today (12 %). Expected rates are editable assumptions (Deli 12 %, Meat 4 %, Produce 8 %, Bakery 9 %, Seafood 8 %, Floral 8 %, clamped 0–30 %).',
+    definition: 'Gross Margin Rate less a loss rate: actual known loss ÷ sales, or the expected total loss rate the Deli team uses today (12 %). Expected rates are editable assumptions (Deli 12 %, Produce 8 %, Bakery 9 %, Seafood 8 %, Floral 8 %, clamped 0–30 %).',
     formula: 'Gross Margin Rate − loss rate',
     source: `${EASS} · ${KL}`,
     reconciliation: 'Matches the Deli team’s gross profit after expected loss.',
@@ -354,7 +357,7 @@ KPI_DEFINITIONS.push(
     name: 'Margin target bands',
     unit: '%',
     definition:
-      'Target range for item-level Gross Margin Rate by department, centered on each department’s item-level margin (src/data/targets.ts): Produce 45–50 %, Meat 30–35 %, Deli 53–58 %, Bakery 56–61 %, Seafood 33–38 %, Floral 58–66 %. Items, PLUs and simulated costs below the band get a "Below target" chip.',
+      'Target range for item-level Gross Margin Rate by department, centered on each department’s item-level margin (src/data/targets.ts): Produce 45–50 %, Deli 53–58 %, Bakery 56–61 %, Seafood 33–38 %, Floral 58–66 %. Items, PLUs and simulated costs below the band get a "Below target" chip.',
     formula: 'Gross Margin Rate < band low',
     source: 'Category team targets',
     reconciliation: 'To confirm with each category team.',

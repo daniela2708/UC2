@@ -10,7 +10,6 @@ export interface TargetBand {
 }
 
 const DEPT_BANDS: Record<string, TargetBand> = {
-  Meat: { lo: 0.3, hi: 0.35 },
   Produce: { lo: 0.45, hi: 0.5 },
   Deli: { lo: 0.53, hi: 0.58 },
   Bakery: { lo: 0.56, hi: 0.61 },

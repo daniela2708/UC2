@@ -55,7 +55,6 @@ export interface PurchaseOrder {
 }
 
 const VENDORS: Record<string, string[]> = {
-  Meat: ['Blue Ridge Packing', 'Penn Valley Meats', 'Allegheny Provisions'],
   Produce: ['Susquehanna Valley Growers', 'Keystone Produce Co.', 'Lancaster County Farms', 'Garden State Fresh'],
   Deli: ['Mid-Atlantic Deli Supply', 'Keystone Provisions'],
   Bakery: ['Harvest Mill Supply', 'Weis Bakery Commissary'],
@@ -65,7 +64,6 @@ const VENDORS: Record<string, string[]> = {
 const DC = 'Weis Distribution Center';
 /** DSD vendors deliver straight to stores; receipts are recorded in Retalix HQ. */
 const DSD_VENDOR: Record<string, string> = {
-  Meat: 'Valley Smokehouse (DSD)',
   Produce: 'Fresh Leaf Farms (DSD)',
   Deli: 'Keystone Cheese Co. (DSD)',
   Bakery: 'Hometown Bread Co. (DSD)',
