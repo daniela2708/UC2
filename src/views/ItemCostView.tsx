@@ -254,7 +254,7 @@ function ItemCostBody({
 
       {it.dsd ? (
         <Banner kind="note">
-          DSD item: received through direct store delivery and recorded item by item in Retalix HQ. Total Purchases and PO Cost / Unit come from HQ receipts; there are no
+          DSD item: received through direct store delivery and recorded item by item in Retalix HQ. Spend and PO Cost / Unit come from HQ receipts; there are no
           Biceps purchase orders.
         </Banner>
       ) : (

@@ -195,7 +195,7 @@ export function totalPurchases(b: PurchaseBreakdown): number {
   return t;
 }
 
-/** Purchase Cost per Unit = SUM(Total Purchases) ÷ SUM(volume purchased from PO data) — workbook (legacy source: Biceps). */
+/** Purchase Cost per Unit = SUM(PO spend) ÷ SUM(volume purchased from PO data) — workbook (legacy source: Biceps). */
 export function purchaseCostPerUnit(totalPurchasesSum: Num, volumePurchased: Num): number | null {
   if (typeof volumePurchased === 'number' && volumePurchased < 0) return null;
   return safeDiv(totalPurchasesSum, volumePurchased);

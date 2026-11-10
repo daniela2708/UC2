@@ -21,7 +21,7 @@ All data is simulated; say so once at the start. The date in the app is **10/18/
 | 6:30 | Ingredients View › **Where used** | Ingredient = **Pizza dough ball** (13 PLUs). Type **0.85** in *New cost per lb* (today $0.70). Click **16 in. Cheese Pizza** in the list. | A base ingredient change flows to every recipe: **annual cost change +$439K, margin impact −$439K**. "Simulation only. Nothing is saved or sent to HQ." |
 | 7:30 | **Known Loss Report** (`?tab=loss`) | Point at the **Scope TBD** chip and strip. It opens on the **last full week** (10/11/26). Switch **View by → To Date → Year-to-Date**. Type **24169** (Chicken Noodle Soup 16 oz) in the store table's SKU / PLU box. Click **Add to IT Review List** on store **116**, then **Export list for IT (CSV)**. | Directors and CMs read it by last full week. Store 116 sold 1 unit and scanned out 4,000 in the week of 09/27/26: a likely entry error, handed to IT as a file. This view may move to a separate use case (#9), and loss comes from KL1011, not Ops 300 (#16); the High Loss Flag stays required in Category-Item Summary. |
 | 8:45 | Known Loss Report | Clear the SKU. Point at the **flagged entries** list (salmon, store 152, $11,700) and the **strawberries** banner ($8.9M, excluded from totals). | High Loss Flag = loss above $1,000 in a week (threshold basis assumed at cost, pending validation). |
-| 9:30 | Header › **KPI definitions** | Scroll to the end. | The open questions the prototype cites, with their workbook numbers: Biceps access (#1), the $1,000 threshold (#2) and its SQL (#26), the Fresh purchases build (#5), recipe maintenance (#10), the loss source of truth (#16), among others. |
+| 9:30 | Header › **KPI definitions** | Scroll to the end. | The open questions the prototype cites, with their workbook numbers: Biceps access (#1), the $1,000 threshold (#2) and its SQL (#26), the purchases build and Estimated Purchases (#5), recipe maintenance (#10), the loss source of truth (#16), among others. |
 
 ## If you have more time
 
@@ -29,7 +29,7 @@ All data is simulated; say so once at the start. The date in the app is **10/18/
   - Open **Columns → Loss focus** to see loss without scrolling sideways.
   - Click an item row to open its store-level loss in the Known Loss Report.
 - **Known Loss Report** (scope TBD): expand **New items watch** for FY2026 launches in their first 12 weeks.
-- **Category-Item Summary:** filter **Department = Bakery** and look at **Total Purchases** for bread items: the chip says **DSD receipt (HQ)**. Bread is delivered straight to stores and recorded in Retalix HQ, and it adds up to the Bakery DSD line in the Fresh Report.
+- **Category-Item Summary:** filter **Department = Bakery** and look at **Estimated Purchases**: one source for every item, the invoicing application (Proposed, #5). Bread is delivered straight to stores (DSD), and in the simulation its estimated purchases add up to the Bakery DSD line in the Fresh Report.
 
 ## If something looks off
 

@@ -457,7 +457,7 @@ export function FreshReportView({ openDefinitions }: ViewProps) {
         title="Fresh Report"
         question="Which stores and districts are behind on fresh margin?"
         painPoint="Store-level fresh gross profit comes from a manual Accounting Excel, with no view by region, district or store against budget."
-        validate="Available on Thursdays, once the week’s accounting postings are complete; the Workday accounting source must be confirmed as in migration scope (#5). Gross Sales basis and source for the Fresh Report (#17); outside-vendor (C&S) and DSD receipt flows (#6)."
+        validate="Purchases come from the Workday general ledger, as in the legacy Fresh Report, available on Thursdays once postings are complete; Workday is still to confirm as in migration scope (#5). Gross Sales basis and source for the Fresh Report (#17); outside-vendor (C&S) and DSD receipt flows (#6)."
       >
         {productLabel}, {rangeLabel}: Total Gross Sales <b>{moneyCompact(total.sales)}</b>, Total Purchases <b>{moneyCompact(purch)}</b>, Gross Margin Rate{' '}
         <b>{pct(gmr)}</b> (

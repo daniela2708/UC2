@@ -43,7 +43,6 @@ import {
   addAgg,
   buildScope,
   dsdReceipts,
-  purchaseSource,
   emptyAgg,
   findFlags,
   itemAggregates,
@@ -63,7 +62,7 @@ describe('workbook KPI formulas', () => {
     expect(netSalesPerUnit(980, 250)).toBeCloseTo(3.92);
     expect(averageRetail(1000, 0)).toBeNull();
   });
-  it('Purchase Cost per Unit = Total Purchases ÷ volume purchased (units purchased, not units sold)', () => {
+  it('Purchase Cost per Unit = PO spend ÷ volume purchased (units purchased, not units sold)', () => {
     // $600 spent on 400 units purchased, of which 300 sold: $1.50, not $2.00.
     expect(purchaseCostPerUnit(600, 400)).toBe(1.5);
     expect(purchaseCostPerUnit(600, 0)).toBeNull();
@@ -323,7 +322,7 @@ describe('Fresh Report', () => {
 });
 
 describe('purchases reconcile', () => {
-  it('item Total Purchases = Biceps PO spend (PLU, RW), warehouse orders (UPC, source pending) or production cost (composite), and Purchase Cost per Unit divides by volume purchased', () => {
+  it('item Estimated Purchases (simulated) = Biceps PO spend (PLU, RW), warehouse orders (UPC) or production cost (composite), and Purchase Cost per Unit divides by volume purchased', () => {
     const all = buildScope(DEFAULT_STATE, ytd);
     const aggs = itemAggregates(all, DEFAULT_STATE.costBasis, 'po');
     const m = getModel();
@@ -701,7 +700,7 @@ describe('DSD items (receipts in Retalix HQ)', () => {
     for (const row of freshStoreWeeks(sc, [d], weeks).values()) for (const c of row) t += c.purchases.dsd;
     return t;
   };
-  it('about 5–12 % of fresh items are DSD, mostly Bakery bread, with no Biceps POs and the "DSD receipt (HQ)" source', () => {
+  it('about 5–12 % of fresh items are DSD, mostly Bakery bread, with no Biceps POs', () => {
     const dsd = ITEMS.filter((x) => x.dsd);
     expect(dsd.length / ITEMS.length).toBeGreaterThan(0.05);
     expect(dsd.length / ITEMS.length).toBeLessThan(0.12);
@@ -709,7 +708,6 @@ describe('DSD items (receipts in Retalix HQ)', () => {
     expect(bakery).toBeGreaterThanOrEqual(Math.max(...DEPTS.map((d) => dsd.filter((x) => x.dept === d.idx).length)));
     for (const it of dsd) {
       expect(ordersOf(it.idx)).toHaveLength(0);
-      expect(purchaseSource(it.idx)).toBe('DSD receipt (HQ)');
       expect(it.composite).toBeUndefined();
     }
   });
@@ -728,7 +726,7 @@ describe('DSD items (receipts in Retalix HQ)', () => {
       }
     }
   });
-  it('Category-Item Summary Total Purchases of DSD items equal the department DSD purchases, at the receipt cost', () => {
+  it('Category-Item Summary Estimated Purchases of DSD items equal the department DSD purchases, at the receipt cost', () => {
     const weeks: number[] = [];
     for (let w = p9.startWeek; w <= p9.endWeek; w++) weeks.push(w);
     const all = buildScope(DEFAULT_STATE, p9);
@@ -747,6 +745,41 @@ describe('DSD items (receipts in Retalix HQ)', () => {
         expect(unit).toBeLessThanOrEqual(hi + 1e-9);
       }
     }
+  });
+});
+
+describe('Estimated Purchases (#5)', () => {
+  it('every item has one source, finite and non-negative, and there is no per-item source type any more', async () => {
+    const sel = await import('./selectors');
+    expect('purchaseSource' in sel).toBe(false);
+    const aggs = itemAggregates(buildScope(DEFAULT_STATE, ytd), DEFAULT_STATE.costBasis, 'po');
+    expect(aggs.length).toBeGreaterThan(0);
+    for (const a of aggs) {
+      expect(Number.isFinite(a.purch)).toBe(true);
+      expect(a.purch).toBeGreaterThanOrEqual(0);
+      expect(Object.keys(a).some((k) => k.startsWith('src'))).toBe(false);
+    }
+  });
+  it('an empty selection has no rows and adds up to zero without throwing', () => {
+    const scope = buildScope({ ...DEFAULT_STATE, dept: 0, cat: -1, sub: -1, item: -1, costType: 'UPC', stores: [] }, ytd);
+    const none = { ...scope, items: [] as number[], productKey: 'empty-selection' };
+    const aggs = itemAggregates(none, DEFAULT_STATE.costBasis, 'po');
+    expect(aggs).toEqual([]);
+    const total = emptyAgg();
+    for (const a of aggs) addAgg(total, a);
+    expect(total.purch).toBe(0);
+  });
+  it('is Proposed in the definitions, sourced from the invoicing application, with no "Source pending" left', async () => {
+    const { KPI_DEFINITIONS, OPEN_QUESTIONS } = await import('./definitions');
+    const est = KPI_DEFINITIONS.find((k) => k.id === 'estimated-purchases')!;
+    expect(est.status).toBe('Proposed');
+    expect(est.source).toMatch(/invoicing application/i);
+    expect(est.views).toEqual(['Category-Item Summary']);
+    expect(KPI_DEFINITIONS.find((k) => k.id === 'total-purchases')!.views).toEqual(['Fresh Report']);
+    const q5 = OPEN_QUESTIONS.find((q) => q.id === '5')!;
+    expect(q5.context).not.toMatch(/blocks the build/i);
+    expect(q5.context).toMatch(/Estimated Purchases/);
+    expect(JSON.stringify(KPI_DEFINITIONS)).not.toMatch(/Source pending/);
   });
 });
 

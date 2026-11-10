@@ -316,7 +316,10 @@ export interface Agg {
   poLb: number;
   poUnitsEa: number;
   poUnitsLb: number;
-  /** Total Purchases: PO spend (Biceps); UPC: source pending (#5); composite PLUs: production cost (recipe). */
+  /**
+   * Estimated Purchases (#5): from the invoicing application in the build. Simulated here from PO spend, DSD
+   * receipts and, for composite PLUs, production cost (recipe).
+   */
   purch: number;
   purchEa: number;
   purchLb: number;
@@ -331,11 +334,6 @@ export interface Agg {
   /** Volume purchased (UPC: shipped; composite PLUs: produced = sold + known loss), by unit of measure. */
   purchUnitsEa: number;
   purchUnitsLb: number;
-  /** Items whose Total Purchases come from Biceps POs, a pending source (UPC) or the recipe (to note mixed sources). */
-  srcPo: number;
-  srcPending: number;
-  srcRecipe: number;
-  srcDsd: number;
 }
 
 export function emptyAgg(): Agg {
@@ -375,10 +373,6 @@ export function emptyAgg(): Agg {
     errFlags: 0,
     purchUnitsEa: 0,
     purchUnitsLb: 0,
-    srcPo: 0,
-    srcPending: 0,
-    srcRecipe: 0,
-    srcDsd: 0,
   };
 }
 
@@ -397,13 +391,6 @@ export interface ItemAgg extends Agg {
   flagReasons: string[];
   /** Earliest week whose PO cost was carried into a week without purchases (−1 when none), for the "cost from W38" marker. */
   costFrom: number;
-}
-
-/** Where an item's Total Purchases come from. */
-export type PurchaseSource = 'Biceps PO' | 'Source pending (#5)' | 'Recipe' | 'DSD receipt (HQ)';
-export function purchaseSource(i: number): PurchaseSource {
-  const it = ITEMS[i];
-  return it.dsd ? 'DSD receipt (HQ)' : it.composite ? 'Recipe' : it.costType === 'UPC' ? 'Source pending (#5)' : 'Biceps PO';
 }
 
 /**
@@ -505,7 +492,7 @@ export function itemAggregates(scope: Scope, costBasis: readonly CostElement[], 
               const from = poCostFromWeek(i, wk);
               if (from !== wk && (a.costFrom < 0 || from < a.costFrom)) a.costFrom = from;
             }
-            // Total Purchases and volume purchased for the store set (chain POs × the stores' share of the category).
+            // Estimated Purchases and volume purchased for the store set (chain POs × the stores' share of the category).
             let purch: number;
             let purchUnits: number;
             if (it.dsd) {
@@ -557,11 +544,6 @@ export function itemAggregates(scope: Scope, costBasis: readonly CostElement[], 
       };
       run(false);
       if (r.lyAvailable) run(true);
-      const src = purchaseSource(i);
-      if (src === 'DSD receipt (HQ)') a.srcDsd = 1;
-      else if (src === 'Recipe') a.srcRecipe = 1;
-      else if (src === 'Source pending (#5)') a.srcPending = 1;
-      else a.srcPo = 1;
       const nf = flagCount.get(i) ?? 0;
       const ne = errCount.get(i) ?? 0;
       a.highFlags = nf + ne;

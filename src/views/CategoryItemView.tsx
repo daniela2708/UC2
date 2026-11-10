@@ -6,7 +6,7 @@ import { CellBar, FlagCell, InfoTip, Segmented, StatusChip, Var } from '../compo
 import { C, ChartCard, ChartGrid, TrendLines } from '../components/Charts';
 import { describeProductScope, describeStoreScope, effectiveTime } from '../lib/filters';
 import { actions } from '../lib/filterStore';
-import { count, DASH, money, moneyCompact, moneyUnit, pct, pctChange, volume, volumeCompact, weekTick } from '../lib/format';
+import { DASH, money, moneyCompact, moneyUnit, pct, pctChange, volume, volumeCompact, weekTick } from '../lib/format';
 import {
   COST_ELEMENTS,
   grossMargin,
@@ -22,7 +22,7 @@ import {
   type LossBasis,
   type MarginBase,
 } from '../lib/kpis';
-import { addAgg, emptyAgg, findFlags, isEntryError, itemAggregates, purchaseSource, trendWeeks, weeklyMargin, type Agg, type ItemAgg, type PurchaseSource } from '../lib/selectors';
+import { addAgg, emptyAgg, findFlags, isEntryError, itemAggregates, trendWeeks, weeklyMargin, type Agg, type ItemAgg } from '../lib/selectors';
 import { belowTarget, catBand, deptBand, type TargetBand } from '../data/targets';
 import { LAST_COMPLETE_WEEK } from '../data/calendar';
 import { RETAIL_LOSS_FACTOR } from '../data/generate';
@@ -52,9 +52,8 @@ function itemColumns(idStores: boolean, basis: LossBasis): HierCol[] {
     { key: 'gmr', label: 'Gross Margin Rate', title: 'SUM(Gross Margin) ÷ SUM(Gross Sales); shaded band = target (Proposed)', group: 'Margin' },
     {
       key: 'purch',
-      label: 'Total Purchases',
-      title:
-        'PO cost spent (Biceps PO cost × volume). UPC: source pending (#5). Composite PLUs: production cost (recipe) = units produced (sold + known loss) × recipe cost; unknown loss not included. DSD items: DSD receipts recorded in Retalix HQ, which add up to the department’s Fresh Report DSD purchases. Store filters take the stores’ share of the category.',
+      label: 'Estimated Purchases',
+      title: `${EST_PURCH_TIP} Store filters take the stores’ share of the category.`,
       group: 'Cost',
     },
     {
@@ -126,19 +125,13 @@ interface CellOpts {
   /** Loss rate used for Margin After Loss: null = actual known loss ÷ sales. */
   expectedLoss: number | null;
   reliability?: string;
-  /** Item rows: where Total Purchases come from. */
-  source?: PurchaseSource;
   /** Item rows: earliest week whose PO cost was carried into a week without purchases. */
   costFrom?: number;
 }
 
-const SOURCE_TIP: Record<PurchaseSource, string> = {
-  'Biceps PO': 'PO cost spent, from PO cost and volume in Biceps.',
-  'Source pending (#5)': 'UPC items have no Biceps PO; the source of their purchases is pending (#5).',
-  Recipe: 'Production cost (recipe): units produced (sold + known loss) × recipe cost. Unknown loss is not included.',
-  'DSD receipt (HQ)':
-    'Received through DSD (direct store delivery) and recorded item by item in Retalix HQ, at the receipt cost. DSD items add up to the department’s DSD purchases in the Fresh Report.',
-};
+/** Estimated Purchases (#5): one source, the invoicing application, for every item. */
+const EST_PURCH_TIP =
+  'Proposed: estimated purchases from the invoicing application, for every item (#5). It is still to confirm that the invoicing application will be pulled into the dashboard. Simulated in the prototype.';
 
 function signedMoney(v: number | null): string {
   if (v === null) return DASH;
@@ -161,30 +154,7 @@ function aggCells(
   const nspu = perUnit(a, a.netEa, a.netLb);
   const arpu = perUnit(a, a.grossEa, a.grossLb);
   const po = perUnit(a, a.poEa, a.poLb, a.poUnitsEa, a.poUnitsLb);
-  const sources = [
-    a.srcPo ? `${count(a.srcPo)} Biceps PO` : '',
-    a.srcPending ? `${count(a.srcPending)} source pending (#5)` : '',
-    a.srcRecipe ? `${count(a.srcRecipe)} recipe` : '',
-    a.srcDsd ? `${count(a.srcDsd)} DSD receipt (HQ)` : '',
-  ].filter(Boolean);
-  const purchCell =
-    o.source ? (
-      <>
-        {money(a.purch)}
-        <span className="cell-sub" title={SOURCE_TIP[o.source]}>
-          {o.source === 'Recipe' ? 'Production cost (recipe)' : o.source}
-        </span>
-      </>
-    ) : sources.length > 1 ? (
-      <>
-        {money(a.purch)}
-        <span className="cell-sub" title={`Mixed sources: ${sources.join(' · ')}.`}>
-          Mixed sources
-        </span>
-      </>
-    ) : (
-      money(a.purch)
-    );
+  const purchCell = money(a.purch);
   const carried = o.costFrom !== undefined && o.costFrom >= 0 ? <span className="cell-sub amber" title="No purchases in some weeks of the range: margin uses the most recent PO cost">cost from W{fiscalOfWeek(o.costFrom).week}</span> : null;
   const ncu = perUnit(a, a.costEa, a.costLb);
   const yg = yoyGrowth(a.gross, a.lyGross);
@@ -305,7 +275,7 @@ export function CategoryItemView({ openDefinitions }: ViewProps) {
       const reasons = below ? [...a.flagReasons, 'Below target'] : a.flagReasons;
       const c = aggCells(
         a,
-        { ...cellOpts, expectedLoss: expFor(it.dept), reliability: it.costType === 'UPC' ? 'Reliable (average cost)' : 'Under review', source: purchaseSource(a.item), costFrom: a.costFrom },
+        { ...cellOpts, expectedLoss: expFor(it.dept), reliability: it.costType === 'UPC' ? 'Reliable (average cost)' : 'Under review', costFrom: a.costFrom },
         reasons.length || a.highFlags ? (
           <FlagCell
             flags={a.highFlags}
@@ -424,21 +394,14 @@ export function CategoryItemView({ openDefinitions }: ViewProps) {
       sub: <>{ly && <><Var value={pointsDiff(gmr, lyGmr)} /> vs LY · </>}on {baseWord}</>,
     },
     {
-      label: 'Total Purchases',
-      info: 'PO cost spent (Biceps). UPC: source pending (#5). Composite PLUs: production cost (recipe), unknown loss not included. DSD items: receipts recorded in Retalix HQ.',
+      label: 'Estimated Purchases',
+      info: EST_PURCH_TIP,
       value: moneyCompact(total.purch),
-      sub: (() => {
-        const n = [total.srcPo, total.srcPending, total.srcRecipe, total.srcDsd].filter((x) => x > 0).length;
-        return n > 1
-          ? 'Mixed sources: Biceps PO, source pending, recipe, DSD'
-          : total.srcRecipe
-            ? 'Production cost (recipe)'
-            : total.srcPending
-              ? 'Source pending (#5)'
-              : total.srcDsd
-                ? 'DSD receipt (HQ)'
-                : 'Biceps PO';
-      })(),
+      sub: (
+        <>
+          Invoicing application <StatusChip status="Proposed" />
+        </>
+      ),
     },
     {
       label: 'Known Loss ($)',
@@ -472,7 +435,7 @@ export function CategoryItemView({ openDefinitions }: ViewProps) {
         title="Category-Item Summary"
         question="Which items make money once cost and loss are counted?"
         painPoint="No single view of item profitability: today’s margins do not show purchases or loss by item, and the HQ Average Cost is per SKU, with no PLU roll-up or trend."
-        validate="No direct Biceps connection: PO cost would come from the daily Biceps extract to SQL Server (location to confirm) or the existing Snowflake feed, and HQ Average Cost vs PO cost is a pending business decision (#1, #3, #32). How Total Purchases are built is pending (#5)."
+        validate="No direct Biceps connection: PO cost would come from the daily Biceps extract to SQL Server (location to confirm) or the existing Snowflake feed, and HQ Average Cost vs PO cost is a pending business decision (#1, #3, #32). Estimated Purchases come from the invoicing application, still to confirm in the dashboard (#5)."
       >
         {describeProductScope(state)}, {range.label}: Total Gross Sales <b>{moneyCompact(total.gross)}</b>, Gross Margin Rate <b>{pct(gmr)}</b>
         {ly && (
@@ -480,7 +443,7 @@ export function CategoryItemView({ openDefinitions }: ViewProps) {
             {' '}(<b>{pointsDiff(gmr, lyGmr) !== null ? <Var value={pointsDiff(gmr, lyGmr)} /> : DASH}</b> vs. last year)
           </>
         )}
-        , Total Purchases <b>{moneyCompact(total.purch)}</b>, Known Loss <b>{moneyCompact(loss)}</b> (<b>{pct(lossPct)}</b> of sales).
+        , Estimated Purchases <b>{moneyCompact(total.purch)}</b>, Known Loss <b>{moneyCompact(loss)}</b> (<b>{pct(lossPct)}</b> of sales).
       </SectionHeading>
 
       <BannerStack>
