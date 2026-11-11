@@ -317,10 +317,13 @@ export interface Agg {
   poUnitsEa: number;
   poUnitsLb: number;
   /**
-   * Estimated Purchases (#5): from the invoicing application in the build. Simulated here from PO spend, DSD
-   * receipts and, for composite PLUs, production cost (recipe).
+   * Warehouse & DSD Purchases (#5): warehouse purchases are the DC-to-store bills from the internal billing
+   * application; DSD purchases are the receipts recorded in Retalix HQ. Simulated here: DSD items from the DSD
+   * receipts, other items from PO spend or, for composite PLUs, production cost (recipe).
    */
   purch: number;
+  /** The DSD part of `purch` (Retalix HQ receipts); the rest is warehouse bills. */
+  purchDsd: number;
   purchEa: number;
   purchLb: number;
   lossUnitsEa: number;
@@ -364,6 +367,7 @@ export function emptyAgg(): Agg {
     poUnitsEa: 0,
     poUnitsLb: 0,
     purch: 0,
+    purchDsd: 0,
     purchEa: 0,
     purchLb: 0,
     lossUnitsEa: 0,
@@ -492,7 +496,7 @@ export function itemAggregates(scope: Scope, costBasis: readonly CostElement[], 
               const from = poCostFromWeek(i, wk);
               if (from !== wk && (a.costFrom < 0 || from < a.costFrom)) a.costFrom = from;
             }
-            // Estimated Purchases and volume purchased for the store set (chain POs × the stores' share of the category).
+            // Warehouse & DSD Purchases and volume purchased for the store set (chain POs × the stores' share of the category).
             let purch: number;
             let purchUnits: number;
             if (it.dsd) {
@@ -517,6 +521,7 @@ export function itemAggregates(scope: Scope, costBasis: readonly CostElement[], 
             a.lossRetail += lossV * RETAIL_LOSS_FACTOR[d];
             a.lossUnits += lu;
             a.purch += purch;
+            if (it.dsd) a.purchDsd += purch;
             a.donations += m.donations[i * NW + wk] * sh.sales[c * NW + wk] * frac;
             if (ea) {
               a.ea += units;

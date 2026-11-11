@@ -54,7 +54,7 @@ The tab bar holds the five views the workbook requires, in the order agreed afte
 
 | # | User story (summary) | Metrics | Filters | View | Lowest grain | Refresh |
 |---|---|---|---|---|---|---|
-| 1 | Category manager / director evaluates item performance with accurate costs tied to recipes | Gross Sales, Net Sales, PO Costs, Purchase Cost per Unit, Estimated Purchases, Net Sales per Unit, Gross Margin ($ / %), Known Loss | To Date, Rolling, Department, Category, Subcategory, SKU Number | Category-Item Summary | Item-Day | Daily sales |
+| 1 | Category manager / director evaluates item performance with accurate costs tied to recipes | Gross Sales, Net Sales, PO Costs, Purchase Cost per Unit, Warehouse & DSD Purchases, Net Sales per Unit, Gross Margin ($ / %), Known Loss | To Date, Rolling, Department, Category, Subcategory, SKU Number | Category-Item Summary | Item-Day | Daily sales |
 | 2 | Real-time item cost for random-weight / PLU items, based on POs | PO Cost, PO Cost / Unit, Gross Sales, Gross Margin ($ / %) | To Date, Rolling, Department, Category, Subcategory, SKU Number | Item Cost Over Time; Category-Item Summary | Item-Day | Daily costs and sales |
 | 3 | Simple store-level gross profit from sales and purchases, accounting for loss | Gross Sales, Purchases (Workday general ledger), Gross Profit ($ / %) | To Date, Rolling, Department, Category | Fresh Report | Category-Week | Weekly, on Thursdays after accounting postings |
 | 4 | Review shrink impact on a category, spot fat-fingering errors and report them to IT for removal (Add to IT Review List) | Volume Sold, Sales ($), Known Loss (Units), Known Loss ($), High Loss Flag | Department, Category, Item, time | Known Loss Report (Add to IT Review List, Export list for IT); Category-Item Summary | Item-Store-Week | Daily loss |
@@ -98,10 +98,14 @@ Every large table also has a sticky hierarchy column and a pinned Total row. **E
 Every formula lives in `src/lib/kpis.ts` (pure, typed, null-guarded) and uses the workbook names everywhere: tiles, headers, the definitions drawer and exports. All rates are ratios of totals, and a zero or missing denominator shows `—`. Volume never adds `ea` and `lb`; per-unit values at aggregate rows show one line per unit of measure.
 
 - **Gross Margin Rate** = SUM(Gross Margin) ÷ SUM(**Gross Sales**). A `Margin on: Gross Sales | Net Sales` toggle offers Net Sales as a proposed option.
-- **Estimated Purchases** (Category-Item Summary, Proposed) replaces Total Purchases there. Its source is the invoicing application, for every item (#5); it is still to confirm that the invoicing application will be pulled into the dashboard.
-  - In the prototype the values are simulated: PO spend, DSD receipts (which add up exactly to each department's DSD purchases in the Fresh Report) and, for composite PLUs, production cost.
+- **Warehouse & DSD Purchases** (Category-Item Summary, Proposed) replaces Total Purchases there (#5). It is the estimated purchases at item, store and day:
+  - Warehouse purchases are the DC-to-store bills from the internal billing application, at point-in-time average cost.
+  - DSD purchases are the receipts recorded in Retalix HQ, at the amount owed to the vendor.
+  - Refreshed daily. Packaging, transfers, credits and other GL adjustments are not included, so it will not equal the Fresh Report's Total Purchases.
+  - Still to confirm which system or table holds the billing application's data, to add it to the migration plan; WAREHOUSE_SHIPT_F is a candidate (#5). A DSD receipt can cover a week of product, and the shortest period the dashboard shows is open (#49).
+  - In the prototype the values are simulated: DSD items from DSD receipts (which add up exactly to each department's DSD purchases in the Fresh Report), other items from PO spend or, for composite PLUs, production cost. The tile splits the total into Warehouse and DSD.
   - Margins do not use it; they use Total Net Cost.
-- **Total Purchases (Fresh Report)** comes from the Workday general ledger, as in the legacy Fresh Report (#5). It is a different measure from Estimated Purchases.
+- **Total Purchases (Fresh Report)** comes from the Workday general ledger, as in the legacy Fresh Report (#5). It is a different measure from Warehouse & DSD Purchases.
 - **Purchase Cost per Unit** = SUM(PO spend) ÷ SUM(volume purchased), from Biceps POs (#1, #12). In Item Cost Over Time it is the **Historical PO Cost**; it is no longer a Category-Item Summary column.
 - **PO Cost / Unit:**
   - **Period-based:** PO spend in the period ÷ volume purchased in the period. A period without purchases is a gap; margins then carry the latest PO cost and say so ("cost from W38").
@@ -125,7 +129,7 @@ The **KPI definitions** modal lists each KPI with its business definition, calcu
 - **#1** Real-time PO Cost: access to PO cost in Biceps and its link to Retalix HQ.
 - **#2** High loss threshold ($1,000 per week per item).
 - **#3** Cost for PLU-based and random-weight items.
-- **#5** Purchases build: the Fresh Report uses the Workday general ledger; Category-Item Summary uses Estimated Purchases from the invoicing application, still to confirm in the dashboard.
+- **#5** Purchases build: the Fresh Report uses the Workday general ledger; Category-Item Summary uses Warehouse & DSD Purchases (billing application and Retalix HQ DSD receipts).
 - **#6** Receiving data flows (DC and C&S).
 - **#9** Exceptions review scope.
 - **#10** Ingredient and recipe costs: recipes exist in Upshop (Inva Fresh); they need uploading and the API connecting to the dashboard.
@@ -153,7 +157,7 @@ Everything is generated in the browser at startup from a fixed seed, **`20261018
 | Category × store × week | 24 × 200 × 147 | each store's share of chain sales and known loss |
 | Item × store × week corrections | sparse | planted store-level stories (store 116 soup) that every total derives from |
 | Purchase orders (`src/data/purchasing.ts`) | item × vendor × delivery day | PO spend and volume, landed cost, HQ cost |
-| DSD receipts (`dsdReceipts` in `src/lib/selectors.ts`) | item × store × week | DSD items' Estimated Purchases, tied to the Fresh Report DSD line |
+| DSD receipts (`dsdReceipts` in `src/lib/selectors.ts`) | item × store × week | DSD items' Warehouse & DSD Purchases, tied to the Fresh Report DSD line |
 | Recipes and ingredients (`src/data/products.ts`) | PLU × ingredient × week | recipe quantities, ingredient cost per unit of costing |
 | Fresh Report purchases | department × store × week, split to category | Fresh Report channels |
 

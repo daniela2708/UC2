@@ -52,8 +52,8 @@ function itemColumns(idStores: boolean, basis: LossBasis): HierCol[] {
     { key: 'gmr', label: 'Gross Margin Rate', title: 'SUM(Gross Margin) ÷ SUM(Gross Sales); shaded band = target (Proposed)', group: 'Margin' },
     {
       key: 'purch',
-      label: 'Estimated Purchases',
-      title: `${EST_PURCH_TIP} Store filters take the stores’ share of the category.`,
+      label: 'Warehouse & DSD Purchases',
+      title: `${WDP_TIP} Store filters take the stores’ share of the category.`,
       group: 'Cost',
     },
     {
@@ -129,9 +129,9 @@ interface CellOpts {
   costFrom?: number;
 }
 
-/** Estimated Purchases (#5): one source, the invoicing application, for every item. */
-const EST_PURCH_TIP =
-  'Proposed: estimated purchases from the invoicing application, for every item (#5). It is still to confirm that the invoicing application will be pulled into the dashboard. Simulated in the prototype.';
+/** Warehouse & DSD Purchases (#5): warehouse bills from the internal billing application plus DSD receipts in Retalix HQ. */
+const WDP_TIP =
+  'Proposed: estimated purchases at item, store and day. Warehouse purchases are the DC-to-store bills from the internal billing application, at point-in-time average cost; DSD purchases are the receipts recorded in Retalix HQ, at the amount owed to the vendor. Refreshed daily. Packaging, transfers, credits and other GL adjustments are not included, so it will not equal the Fresh Report’s Total Purchases (#5). Simulated in the prototype.';
 
 function signedMoney(v: number | null): string {
   if (v === null) return DASH;
@@ -394,12 +394,12 @@ export function CategoryItemView({ openDefinitions }: ViewProps) {
       sub: <>{ly && <><Var value={pointsDiff(gmr, lyGmr)} /> vs LY · </>}on {baseWord}</>,
     },
     {
-      label: 'Estimated Purchases',
-      info: EST_PURCH_TIP,
+      label: 'Warehouse & DSD Purchases',
+      info: WDP_TIP,
       value: moneyCompact(total.purch),
       sub: (
         <>
-          Invoicing application <StatusChip status="Proposed" />
+          Warehouse <b>{moneyCompact(total.purch - total.purchDsd)}</b> · DSD <b>{moneyCompact(total.purchDsd)}</b> <StatusChip status="Proposed" />
         </>
       ),
     },
@@ -435,7 +435,7 @@ export function CategoryItemView({ openDefinitions }: ViewProps) {
         title="Category-Item Summary"
         question="Which items make money once cost and loss are counted?"
         painPoint="No single view of item profitability: today’s margins do not show purchases or loss by item, and the HQ Average Cost is per SKU, with no PLU roll-up or trend."
-        validate="No direct Biceps connection: PO cost would come from the daily Biceps extract to SQL Server (location to confirm) or the existing Snowflake feed, and HQ Average Cost vs PO cost is a pending business decision (#1, #3, #32). Estimated Purchases come from the invoicing application, still to confirm in the dashboard (#5)."
+        validate="No direct Biceps connection: PO cost would come from the daily Biceps extract to SQL Server (location to confirm) or the existing Snowflake feed, and HQ Average Cost vs PO cost is a pending business decision (#1, #3, #32). Warehouse & DSD Purchases: still to confirm which system or table holds the billing application’s data, to add it to the migration plan; WAREHOUSE_SHIPT_F is a candidate (#5). A DSD receipt can cover a week of product, and the shortest period the dashboard shows is open (#49)."
       >
         {describeProductScope(state)}, {range.label}: Total Gross Sales <b>{moneyCompact(total.gross)}</b>, Gross Margin Rate <b>{pct(gmr)}</b>
         {ly && (
@@ -443,7 +443,7 @@ export function CategoryItemView({ openDefinitions }: ViewProps) {
             {' '}(<b>{pointsDiff(gmr, lyGmr) !== null ? <Var value={pointsDiff(gmr, lyGmr)} /> : DASH}</b> vs. last year)
           </>
         )}
-        , Estimated Purchases <b>{moneyCompact(total.purch)}</b>, Known Loss <b>{moneyCompact(loss)}</b> (<b>{pct(lossPct)}</b> of sales).
+        , Warehouse & DSD Purchases <b>{moneyCompact(total.purch)}</b>, Known Loss <b>{moneyCompact(loss)}</b> (<b>{pct(lossPct)}</b> of sales).
       </SectionHeading>
 
       <BannerStack>

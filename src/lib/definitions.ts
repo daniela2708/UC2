@@ -94,17 +94,18 @@ export const KPI_DEFINITIONS: KpiDefinition[] = [
     views: [CI],
   },
   {
-    id: 'estimated-purchases',
-    name: 'Estimated Purchases',
+    id: 'warehouse-dsd-purchases',
+    name: 'Warehouse & DSD Purchases',
     unit: '$',
     definition:
-      'Estimated purchases by item from the invoicing application, for every item (#5). Replaces Total Purchases in Category-Item Summary. It is still to confirm that the invoicing application will be pulled into the dashboard. In the prototype the values are simulated (PO spend, DSD receipts and, for composite PLUs, production cost); store filters take the stores’ share of the category. Margins do not use it: they use Total Net Cost.',
-    formula: 'Σ estimated purchases (invoicing application) for the items and period',
-    source: 'Invoicing application (to confirm, #5)',
-    reconciliation: 'To define once the invoicing application feed is confirmed (#5). A different measure from the Fresh Report purchases.',
+      'Estimated purchases at item, store and day. Warehouse purchases are the DC-to-store bills from the internal billing application, at point-in-time average cost. DSD purchases are the receipts recorded in Retalix HQ, at the amount owed to the vendor. Refreshed daily. Packaging, transfers, credits and other GL adjustments are not included, so it will not equal the Fresh Report’s Total Purchases (#5). Replaces Total Purchases in Category-Item Summary. In the prototype the values are simulated: DSD items from DSD receipts, other items from PO spend or, for composite PLUs, production cost; store filters take the stores’ share of the category. Margins do not use it: they use Total Net Cost.',
+    formula: 'Σ warehouse bills (billing application) + Σ DSD receipts (Retalix HQ) for the items, stores and period',
+    source: 'Internal billing application (DC-to-store bills) · Retalix HQ (DSD receipts)',
+    reconciliation: 'DSD part equals the DSD receipts in Retalix HQ. Warehouse part to define once the billing application’s source is confirmed (#5). A different measure from the Fresh Report’s Total Purchases.',
     status: 'Proposed',
     priority: 'Must',
     views: [CI],
+    note: 'Still to confirm which system or table holds the billing application’s data, to add it to the migration plan; WAREHOUSE_SHIPT_F is a candidate (#5). A DSD receipt can cover a week of product; the shortest period the dashboard shows is open (#49).',
   },
   {
     id: 'total-purchases',
@@ -458,7 +459,7 @@ export const OPEN_QUESTIONS: OpenQuestion[] = [
   {
     id: '5',
     question: 'How Purchases are built for the fresh departments, and who maintains the data behind the Fresh Report.',
-    context: 'Partly answered; address during build. Fresh Report purchases use the Workday general ledger, as in the legacy Fresh Report (postings complete on Thursdays). Category-Item Summary uses estimated purchases from the invoicing application, called "Estimated Purchases". Still to confirm: that the invoicing application will be pulled into the dashboard, and that Workday is in migration scope.',
+    context: 'Partly answered; address during build. Fresh Report purchases use the Workday general ledger, as in the legacy Fresh Report (postings complete on Thursdays). Category-Item Summary uses Warehouse & DSD Purchases: warehouse bills from the internal billing application and DSD receipts from Retalix HQ. Still to confirm which system or table holds the billing application’s data, and that Workday is in migration scope.',
   },
   {
     id: '6',

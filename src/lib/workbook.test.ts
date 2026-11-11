@@ -322,7 +322,7 @@ describe('Fresh Report', () => {
 });
 
 describe('purchases reconcile', () => {
-  it('item Estimated Purchases (simulated) = Biceps PO spend (PLU, RW), warehouse orders (UPC) or production cost (composite), and Purchase Cost per Unit divides by volume purchased', () => {
+  it('item Warehouse & DSD Purchases (simulated) = Biceps PO spend (PLU, RW), warehouse orders (UPC) or production cost (composite), and Purchase Cost per Unit divides by volume purchased', () => {
     const all = buildScope(DEFAULT_STATE, ytd);
     const aggs = itemAggregates(all, DEFAULT_STATE.costBasis, 'po');
     const m = getModel();
@@ -726,7 +726,7 @@ describe('DSD items (receipts in Retalix HQ)', () => {
       }
     }
   });
-  it('Category-Item Summary Estimated Purchases of DSD items equal the department DSD purchases, at the receipt cost', () => {
+  it('Category-Item Summary Warehouse & DSD Purchases of DSD items equal the department DSD purchases, at the receipt cost', () => {
     const weeks: number[] = [];
     for (let w = p9.startWeek; w <= p9.endWeek; w++) weeks.push(w);
     const all = buildScope(DEFAULT_STATE, p9);
@@ -748,8 +748,8 @@ describe('DSD items (receipts in Retalix HQ)', () => {
   });
 });
 
-describe('Estimated Purchases (#5)', () => {
-  it('every item has one source, finite and non-negative, and there is no per-item source type any more', async () => {
+describe('Warehouse & DSD Purchases (#5)', () => {
+  it('every item has one value, finite and non-negative, and there is no per-item source type any more', async () => {
     const sel = await import('./selectors');
     expect('purchaseSource' in sel).toBe(false);
     const aggs = itemAggregates(buildScope(DEFAULT_STATE, ytd), DEFAULT_STATE.costBasis, 'po');
@@ -760,7 +760,22 @@ describe('Estimated Purchases (#5)', () => {
       expect(Object.keys(a).some((k) => k.startsWith('src'))).toBe(false);
     }
   });
-  it('an empty selection has no rows and adds up to zero without throwing', () => {
+  it('the DSD part comes only from DSD items (Retalix HQ receipts); warehouse items carry none', () => {
+    const p9w = resolveTime({ ...BASE_TIME, mode: 'fiscal', grain: 'period', fy: 2026, period: 9 });
+    const aggs = itemAggregates(buildScope(DEFAULT_STATE, p9w), DEFAULT_STATE.costBasis, 'po');
+    expect(aggs.some((a) => ITEMS[a.item].dsd && a.purchDsd > 0)).toBe(true);
+    expect(aggs.some((a) => !ITEMS[a.item].dsd && a.purch > 0)).toBe(true);
+    for (const a of aggs) {
+      if (ITEMS[a.item].dsd) expect(a.purchDsd).toBe(a.purch);
+      else expect(a.purchDsd).toBe(0);
+    }
+    const total = emptyAgg();
+    for (const a of aggs) addAgg(total, a);
+    expect(total.purchDsd).toBeGreaterThan(0);
+    expect(total.purchDsd).toBeLessThan(total.purch);
+    expect(total.purch - total.purchDsd).toBeGreaterThan(0);
+  });
+  it('an empty selection has no rows and adds up to zero, warehouse and DSD alike, without throwing', () => {
     const scope = buildScope({ ...DEFAULT_STATE, dept: 0, cat: -1, sub: -1, item: -1, costType: 'UPC', stores: [] }, ytd);
     const none = { ...scope, items: [] as number[], productKey: 'empty-selection' };
     const aggs = itemAggregates(none, DEFAULT_STATE.costBasis, 'po');
@@ -768,18 +783,30 @@ describe('Estimated Purchases (#5)', () => {
     const total = emptyAgg();
     for (const a of aggs) addAgg(total, a);
     expect(total.purch).toBe(0);
+    expect(total.purchDsd).toBe(0);
+    expect(total.purch - total.purchDsd).toBe(0);
   });
-  it('is Proposed in the definitions, sourced from the invoicing application, with no "Source pending" left', async () => {
+  it('is Proposed in the definitions, sourced from the billing application and Retalix HQ, and the old name is gone', async () => {
     const { KPI_DEFINITIONS, OPEN_QUESTIONS } = await import('./definitions');
-    const est = KPI_DEFINITIONS.find((k) => k.id === 'estimated-purchases')!;
-    expect(est.status).toBe('Proposed');
-    expect(est.source).toMatch(/invoicing application/i);
-    expect(est.views).toEqual(['Category-Item Summary']);
+    const wdp = KPI_DEFINITIONS.find((k) => k.id === 'warehouse-dsd-purchases')!;
+    expect(wdp.name).toBe('Warehouse & DSD Purchases');
+    expect(wdp.status).toBe('Proposed');
+    expect(wdp.source).toMatch(/billing application/i);
+    expect(wdp.source).toMatch(/Retalix HQ/);
+    expect(wdp.definition).toMatch(/item, store and day/);
+    expect(wdp.definition).toMatch(/Refreshed daily/);
+    expect(wdp.definition).toMatch(/will not equal the Fresh Report’s Total Purchases \(#5\)/);
+    expect(wdp.note).toMatch(/WAREHOUSE_SHIPT_F/);
+    expect(wdp.note).toMatch(/\(#49\)/);
+    expect(wdp.views).toEqual(['Category-Item Summary']);
+    expect(KPI_DEFINITIONS.find((k) => k.id === 'estimated-purchases')).toBeUndefined();
     expect(KPI_DEFINITIONS.find((k) => k.id === 'total-purchases')!.views).toEqual(['Fresh Report']);
     const q5 = OPEN_QUESTIONS.find((q) => q.id === '5')!;
-    expect(q5.context).not.toMatch(/blocks the build/i);
-    expect(q5.context).toMatch(/Estimated Purchases/);
-    expect(JSON.stringify(KPI_DEFINITIONS)).not.toMatch(/Source pending/);
+    expect(q5.context).toMatch(/Warehouse & DSD Purchases/);
+    const text = JSON.stringify({ KPI_DEFINITIONS, OPEN_QUESTIONS });
+    expect(text).not.toMatch(/Estimated Purchases/);
+    expect(text).not.toMatch(/invoicing application/i);
+    expect(text).not.toMatch(/Source pending/);
   });
 });
 
