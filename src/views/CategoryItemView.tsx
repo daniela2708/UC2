@@ -46,7 +46,7 @@ function itemColumns(idStores: boolean, basis: LossBasis): HierCol[] {
     { key: 'gross', label: 'Total Gross Sales', title: 'Sales prior to discounts', group: 'Sales' },
     { key: 'net', label: 'Total Net Sales', title: 'Sales after discounts', group: 'Sales' },
     { key: 'vol', label: 'Total Volume', title: 'Units (ea) or weight (lb) sold. Never summed across units.', group: 'Sales' },
-    { key: 'nspu', label: 'Net Sales per Unit', title: 'SUM(Net Sales) ÷ SUM(Volume), within one unit of measure', group: 'Sales' },
+    { key: 'nspu', label: 'Net Customer Sales per Unit', title: 'SUM(Net Sales) ÷ SUM(Volume), within one unit of measure', group: 'Sales' },
     { key: 'arpu', label: 'Average Retail Price per Unit', title: 'SUM(Gross Sales) ÷ SUM(Volume)', group: 'Sales', defaultHidden: true },
     { key: 'gm', label: 'Gross Margin $', title: 'Net Sales − Total Net Cost', group: 'Margin' },
     { key: 'gmr', label: 'Gross Margin Rate', title: 'SUM(Gross Margin) ÷ SUM(Gross Sales); shaded band = target (Proposed)', group: 'Margin' },

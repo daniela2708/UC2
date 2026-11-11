@@ -82,10 +82,10 @@ export const KPI_DEFINITIONS: KpiDefinition[] = [
     views: [FR],
   },
   {
-    id: 'net-sales-unit',
-    name: 'Net Sales per Unit',
+    id: 'net-customer-sales-unit',
+    name: 'Net Customer Sales per Unit',
     unit: '$',
-    definition: 'Average net price per unit after discounts, within one unit of measure.',
+    definition: 'Average net price per unit after discounts, within one unit of measure. Shown as Net Customer Sales per Unit, as in the workbook; Net Sales is the app’s short name for Net Customer Sales.',
     formula: 'SUM(Net Sales) ÷ SUM(Volume)',
     source: EASS,
     reconciliation: 'Derived; no legacy equivalent.',
@@ -122,18 +122,19 @@ export const KPI_DEFINITIONS: KpiDefinition[] = [
   },
 
   {
-    id: 'purchase-cost-unit',
-    name: 'Purchase Cost per Unit',
+    id: 'average-po-cost',
+    name: 'HQ Average Cost',
     unit: '$',
-    definition: 'PO spend divided by the volume purchased from PO data in Biceps (units purchased, not units sold; #1, #12). Composite PLUs: production cost ÷ units produced. Shown within one unit of measure. In Item Cost Over Time it is the Historical PO Cost: the weighted average PO cost for the filtered period. Removed from the Category-Item Summary table after the prototype review.',
-    formula: 'SUM(PO spend) ÷ SUM(volume purchased)',
-    source: BICEPS,
-    reconciliation: 'Matches Biceps PO spend ÷ PO quantity for the same items and period.',
+    definition:
+      'Called Average PO Cost in the workbook; shown as HQ Average Cost in the prototype. HQ’s average cost for inventory on hand: Biceps calculates it from received POs and feeds Retalix HQ several times a day, deals and trade rates included (#1, #21). It is per SKU, not per PLU, and leaves out DSD (#3). Item Cost Over Time shows it as the dashed line; the Cost source switch in Category-Item Summary uses it for HQ. UPC items always use it.',
+    formula: 'Workbook: SUM(Total Purchases) ÷ SUM(Total Volume), volume on hand from Biceps PO data',
+    source: `${BICEPS} · Retalix HQ`,
+    reconciliation: 'Matches the Retalix HQ average cost for the same item and day.',
     status: 'Draft',
     priority: 'Must',
-    views: [IC],
+    views: [CI, IC],
+    note: 'Which HQ field holds the average cost directors use, and the cost for PLU-based and random-weight items, are still to confirm (#3, #32).',
   },
-
 
   {
     id: 'po-cost',

@@ -54,7 +54,7 @@ The tab bar holds the five views the workbook requires, in the order agreed afte
 
 | # | User story (summary) | Metrics | Filters | View | Lowest grain | Refresh |
 |---|---|---|---|---|---|---|
-| 1 | Category manager / director evaluates item performance with accurate costs tied to recipes | Gross Sales, Net Sales, PO Costs, Purchase Cost per Unit, Warehouse & DSD Purchases, Net Sales per Unit, Gross Margin ($ / %), Known Loss | To Date, Rolling, Department, Category, Subcategory, SKU Number | Category-Item Summary | Item-Day | Daily sales |
+| 1 | Category manager / director evaluates item performance with accurate costs tied to recipes | Gross Sales, Net Sales, PO Costs, Average PO Cost (HQ Average Cost), Warehouse & DSD Purchases, Net Customer Sales per Unit, Gross Margin ($ / %), Known Loss | To Date, Rolling, Department, Category, Subcategory, SKU Number | Category-Item Summary | Item-Day | Daily sales |
 | 2 | Real-time item cost for random-weight / PLU items, based on POs | PO Cost, PO Cost / Unit, Gross Sales, Gross Margin ($ / %) | To Date, Rolling, Department, Category, Subcategory, SKU Number | Item Cost Over Time; Category-Item Summary | Item-Day | Daily costs and sales |
 | 3 | Simple store-level gross profit from sales and purchases, accounting for loss | Gross Sales, Purchases (Workday general ledger), Gross Profit ($ / %) | To Date, Rolling, Department, Category | Fresh Report | Category-Week | Weekly, on Thursdays after accounting postings |
 | 4 | Review shrink impact on a category, spot fat-fingering errors and report them to IT for removal (Add to IT Review List) | Volume Sold, Sales ($), Known Loss (Units), Known Loss ($), High Loss Flag | Department, Category, Item, time | Known Loss Report (Add to IT Review List, Export list for IT); Category-Item Summary | Item-Store-Week | Daily loss |
@@ -106,7 +106,7 @@ Every formula lives in `src/lib/kpis.ts` (pure, typed, null-guarded) and uses th
   - In the prototype the values are simulated: DSD items from DSD receipts (which add up exactly to each department's DSD purchases in the Fresh Report), other items from PO spend or, for composite PLUs, production cost. The tile splits the total into Warehouse and DSD.
   - Margins do not use it; they use Total Net Cost.
 - **Total Purchases (Fresh Report)** comes from the Workday general ledger, as in the legacy Fresh Report (#5). It is a different measure from Warehouse & DSD Purchases.
-- **Purchase Cost per Unit** = SUM(PO spend) ÷ SUM(volume purchased), from Biceps POs (#1, #12). In Item Cost Over Time it is the **Historical PO Cost**; it is no longer a Category-Item Summary column.
+- **Average PO Cost** is the workbook name of the **HQ Average Cost**, HQ's average cost for inventory on hand (#1, #3, #21). The UI keeps the name HQ Average Cost. The **Historical PO Cost** in Item Cost Over Time is SUM(PO spend) ÷ SUM(volume purchased) from Biceps POs (#12).
 - **PO Cost / Unit:**
   - **Period-based:** PO spend in the period ÷ volume purchased in the period. A period without purchases is a gap; margins then carry the latest PO cost and say so ("cost from W38").
   - **HQ Average Cost** is the average cost in Retalix HQ: calculated in Biceps and refreshed several times a day, deals and trade rates included.

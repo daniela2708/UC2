@@ -17,10 +17,10 @@ import {
   MixedUnitError,
   netCostPerUnit,
   netSales,
-  netSalesPerUnit,
+  netCustomerSalesPerUnit,
   pointsDiff,
   poCostPerUnit,
-  purchaseCostPerUnit,
+  averagePoCost,
   safeDiv,
   splitVolume,
   sumStrict,
@@ -74,8 +74,8 @@ describe('sales and volume', () => {
   it('average retail and net sales per unit guard zero volume', () => {
     expect(averageRetail(100, 25)).toBe(4);
     expect(averageRetail(100, 0)).toBeNull();
-    expect(netSalesPerUnit(98, 0)).toBeNull();
-    expect(netSalesPerUnit(98, 49)).toBe(2);
+    expect(netCustomerSalesPerUnit(98, 0)).toBeNull();
+    expect(netCustomerSalesPerUnit(98, 49)).toBe(2);
   });
 });
 
@@ -120,9 +120,9 @@ describe('purchases and Fresh GP', () => {
     expect(freshGpPct(0, 10)).toBeNull();
     expect(freshGpPct(null, 10)).toBeNull();
   });
-  it('purchase cost per unit uses units purchased', () => {
-    expect(purchaseCostPerUnit(500, 200)).toBe(2.5);
-    expect(purchaseCostPerUnit(500, 0)).toBeNull();
+  it('average PO cost uses units purchased', () => {
+    expect(averagePoCost(500, 200)).toBe(2.5);
+    expect(averagePoCost(500, 0)).toBeNull();
   });
   it('budget GP % weights by sales', () => {
     expect(budgetGpPct(0.3 * 100 + 0.2 * 300, 400)).toBeCloseTo(0.225);

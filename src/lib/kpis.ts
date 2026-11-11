@@ -76,8 +76,8 @@ export function averageRetail(grossSales: Num, volume: Num): number | null {
   return safeDiv(grossSales, volume);
 }
 
-/** Net Sales per Unit = Net Sales ÷ Volume. */
-export function netSalesPerUnit(net: Num, volume: Num): number | null {
+/** Net Customer Sales per Unit = Net Sales ÷ Volume (workbook name). */
+export function netCustomerSalesPerUnit(net: Num, volume: Num): number | null {
   return safeDiv(net, volume);
 }
 
@@ -195,8 +195,11 @@ export function totalPurchases(b: PurchaseBreakdown): number {
   return t;
 }
 
-/** Purchase Cost per Unit = SUM(PO spend) ÷ SUM(volume purchased from PO data) — workbook (legacy source: Biceps). */
-export function purchaseCostPerUnit(totalPurchasesSum: Num, volumePurchased: Num): number | null {
+/**
+ * Average PO Cost (workbook name; shown as HQ Average Cost in the UI) = SUM(PO spend) ÷ SUM(volume purchased
+ * from PO data in Biceps). Volume purchased, not volume sold. Null when nothing was purchased.
+ */
+export function averagePoCost(totalPurchasesSum: Num, volumePurchased: Num): number | null {
   if (typeof volumePurchased === 'number' && volumePurchased < 0) return null;
   return safeDiv(totalPurchasesSum, volumePurchased);
 }

@@ -24,11 +24,11 @@ import {
   lastYear,
   likelyEntryError,
   marginAfterLoss,
-  netSalesPerUnit,
+  netCustomerSalesPerUnit,
   impactTone,
   marginImpactOf,
   periodPoCost,
-  purchaseCostPerUnit,
+  averagePoCost,
   roundToX9,
   simulateCostChange,
   totalLoss,
@@ -57,16 +57,33 @@ const ytd = resolveTime(BASE_TIME);
 const dept = (name: string) => DEPTS.findIndex((d) => d.name === name);
 
 describe('workbook KPI formulas', () => {
-  it('Average Retail Price per Unit and Net Sales per Unit are ratios within one unit of measure', () => {
+  it('Average Retail Price per Unit and Net Customer Sales per Unit are ratios within one unit of measure', () => {
     expect(averageRetail(1000, 250)).toBe(4);
-    expect(netSalesPerUnit(980, 250)).toBeCloseTo(3.92);
+    expect(netCustomerSalesPerUnit(980, 250)).toBeCloseTo(3.92);
     expect(averageRetail(1000, 0)).toBeNull();
   });
-  it('Purchase Cost per Unit = PO spend ÷ volume purchased (units purchased, not units sold)', () => {
+  it('Average PO Cost = PO spend ÷ volume purchased (units purchased, not units sold)', () => {
     // $600 spent on 400 units purchased, of which 300 sold: $1.50, not $2.00.
-    expect(purchaseCostPerUnit(600, 400)).toBe(1.5);
-    expect(purchaseCostPerUnit(600, 0)).toBeNull();
-    expect(purchaseCostPerUnit(600, -5)).toBeNull();
+    expect(averagePoCost(600, 400)).toBe(1.5);
+    expect(averagePoCost(600, 0)).toBeNull();
+    expect(averagePoCost(600, -5)).toBeNull();
+    expect(averagePoCost(Number.NaN, 400)).toBeNull();
+    expect(averagePoCost(600, Number.NaN)).toBeNull();
+    expect(averagePoCost(0, 0)).toBeNull();
+    expect(netCustomerSalesPerUnit(0, 0)).toBeNull();
+    expect(netCustomerSalesPerUnit(Number.NaN, 10)).toBeNull();
+  });
+  it('KPI names follow the workbook: Average PO Cost (shown as HQ Average Cost) and Net Customer Sales per Unit', async () => {
+    const { KPI_DEFINITIONS } = await import('./definitions');
+    const apc = KPI_DEFINITIONS.find((k) => k.id === 'average-po-cost')!;
+    expect(apc.name).toBe('HQ Average Cost');
+    expect(apc.definition).toMatch(/Called Average PO Cost in the workbook/);
+    expect(KPI_DEFINITIONS.find((k) => k.id === 'net-customer-sales-unit')!.name).toBe('Net Customer Sales per Unit');
+    expect(KPI_DEFINITIONS.find((k) => k.id === 'purchase-cost-unit')).toBeUndefined();
+    expect(KPI_DEFINITIONS.find((k) => k.id === 'net-sales-unit')).toBeUndefined();
+    const text = JSON.stringify(KPI_DEFINITIONS);
+    expect(text).not.toMatch(/Purchase Cost per Unit/);
+    expect(text).not.toMatch(/Net Sales per Unit/);
   });
   it('Gross Margin Rate divides by Gross Sales by default and by Net Sales when toggled', () => {
     expect(grossMarginRate(30, 100, 98)).toBeCloseTo(0.3);
@@ -322,7 +339,7 @@ describe('Fresh Report', () => {
 });
 
 describe('purchases reconcile', () => {
-  it('item Warehouse & DSD Purchases (simulated) = Biceps PO spend (PLU, RW), warehouse orders (UPC) or production cost (composite), and Purchase Cost per Unit divides by volume purchased', () => {
+  it('item Warehouse & DSD Purchases (simulated) = Biceps PO spend (PLU, RW), warehouse orders (UPC) or production cost (composite), and Average PO Cost divides by volume purchased', () => {
     const all = buildScope(DEFAULT_STATE, ytd);
     const aggs = itemAggregates(all, DEFAULT_STATE.costBasis, 'po');
     const m = getModel();
@@ -334,7 +351,7 @@ describe('purchases reconcile', () => {
       expect(a.purch / t.spend).toBeCloseTo(1, 6);
       const units = ITEMS[a.item].uom === 'ea' ? a.purchUnitsEa : a.purchUnitsLb;
       expect(units / t.units).toBeCloseTo(1, 6);
-      expect(purchaseCostPerUnit(a.purch, units)! / (t.spend / t.units)).toBeCloseTo(1, 6);
+      expect(averagePoCost(a.purch, units)! / (t.spend / t.units)).toBeCloseTo(1, 6);
     }
     const upc = aggs.find((a) => ITEMS[a.item].costType === 'UPC' && !ITEMS[a.item].dsd && a.purch > 0)!;
     const lines = ordersOf(upc.item).filter((o) => o.day >= ytd.start && o.day <= ytd.end);
