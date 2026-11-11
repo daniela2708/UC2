@@ -226,7 +226,7 @@ export const KPI_DEFINITIONS: KpiDefinition[] = [
     id: 'total-loss',
     name: 'Known Loss',
     unit: '$ and Units',
-    definition: 'Known loss recorded in KL1011 (not the Ops 300 report), in $ and units, at cost by default or at retail (about 1.8–2.0 × cost). Totals exclude flagged entries by default.',
+    definition: 'Known loss recorded in KL1011 (not the Ops 300 report), in $ and units, at cost by default or at retail (about 1.8–2.0 × cost). Cost or retail is Pending validation (#50); the Recon Map points to KL1011 "Known Loss Retail $". Totals exclude flagged entries by default.',
     formula: 'Σ known loss $ ; Σ known loss units',
     source: KL,
     reconciliation: 'Matches KL1011 department totals once flagged entries are reviewed.',
@@ -267,14 +267,14 @@ export const KPI_DEFINITIONS: KpiDefinition[] = [
     name: 'High Loss Flag',
     unit: 'T / F',
     definition:
-      'Loss higher than $1,000 in a given week, for an item in a store (#2). Threshold basis: at cost, assumed, Pending validation (not yet in the tracker): nobody has confirmed whether the current $1,000 rule is at cost or at retail, and the Recon Map points to KL1011 "Known Loss Retail $". Proposed refinement, shown only as a secondary label: "Likely entry error" (loss units above 20× the item-store typical weekly loss units, or above the $100,000 plausibility cap) or "High loss to review". An optional 26-week rule (loss also more than 100 % above the item-store 26-week average) is available in the Flag rules popover, off by default.',
+      'Loss higher than $1,000 in a given week, for an item in a store (#2). Threshold basis: at cost, assumed, Pending validation (#50): nobody has confirmed whether the current $1,000 rule is at cost or at retail, or whether it applies per item and store or per item across all stores, and the Recon Map points to KL1011 "Known Loss Retail $". Proposed refinement, shown only as a secondary label: "Likely entry error" (loss units above 20× the item-store typical weekly loss units, or above the $100,000 plausibility cap) or "High loss to review". An optional 26-week rule (loss also more than 100 % above the item-store 26-week average) is available in the Flag rules popover, off by default.',
     formula: 'Weekly known loss $ at cost (item × store × week) > 1,000. Exactly $1,000.00 is not flagged.',
     source: KL,
     reconciliation: 'Category managers report likely entry errors to IT ("Add to IT Review List", "Export list for IT") so they are removed from known loss.',
     status: 'Pending validation',
     priority: 'Must',
     views: [CI, KLR],
-    note: 'Scope TBD: may move to a separate use case or a later wave; the MVP focuses on item cost; whether ingredient costing is in the MVP is to confirm with the business (#44). The High Loss Flag remains a required KPI in Category-Item Summary. Threshold basis: at cost, assumed, Pending validation (not yet in the tracker). Where the current $1,000 rule’s SQL lives is unknown (#26).',
+    note: 'Scope TBD: may move to a separate use case or a later wave; the MVP focuses on item cost; whether ingredient costing is in the MVP is to confirm with the business (#44). The High Loss Flag remains a required KPI in Category-Item Summary. Threshold basis and grain: at cost, per item and store, assumed, Pending validation (#50). Where the current $1,000 rule’s SQL lives is unknown (#26).',
   },
 
   {
@@ -434,97 +434,171 @@ KPI_DEFINITIONS.push(
   },
 );
 
+export type QuestionStatus = 'Open' | 'Partly answered' | 'Answered' | 'Superseded';
+
 export interface OpenQuestion {
   id: string;
+  /** Topic, as in the workbook. */
+  title: string;
+  status: QuestionStatus;
   question: string;
   context: string;
 }
 
-/** Open questions from the requirements workbook (UC #2 - Open Questions), by workbook number. Only the ones the prototype cites. */
+/** Open questions from the requirements workbook (UC #2 - Open Questions, 10 Nov 2026), by workbook number. Only the ones the prototype cites. */
 export const OPEN_QUESTIONS: OpenQuestion[] = [
   {
     id: '1',
-    question: 'Real-time PO Cost: how to access PO cost from Biceps, and how it links to Retalix HQ.',
+    title: 'Real-time PO Cost',
+    status: 'Partly answered',
+    question: 'How to access PO cost from Biceps, and how it links to Retalix HQ.',
     context: 'Biceps is a mainframe with no direct connection. A daily Biceps extract to SQL Server (location to confirm) and the existing Snowflake feed used by the DNP tool may carry PO-level cost. Purchase orders live only in Biceps.',
   },
   {
     id: '2',
+    title: 'High Loss',
+    status: 'Answered',
     question: 'Threshold to flag high loss, for both data entry errors and high real loss.',
-    context: 'Answered: $1,000 per week per item is the default. The prototype applies it per item, store and week, at cost; the threshold basis (cost or retail) is Pending validation (not yet in the tracker).',
+    context: '$1,000 per week per item is the default. The prototype applies it per item, store and week, at cost; the valuation basis and grain are open (#50).',
   },
   {
     id: '3',
+    title: 'PLU and Random-Weight Cost',
+    status: 'Partly answered',
     question: 'Which cost PLU-based and random-weight items should use: HQ Average Cost, PO cost or another measure.',
     context: 'HQ Average Cost is calculated in Biceps, includes deals and trade rates, and is per SKU, not per PLU. The prototype shows every candidate so the business can pick the default.',
   },
   {
     id: '5',
+    title: 'Fresh Purchases Build',
+    status: 'Answered',
     question: 'How Purchases are built for the fresh departments, and who maintains the data behind the Fresh Report.',
-    context: 'Partly answered; address during build. Fresh Report purchases use the Workday general ledger, as in the legacy Fresh Report (postings complete on Thursdays). Category-Item Summary uses Warehouse & DSD Purchases: warehouse bills from the internal billing application and DSD receipts from Retalix HQ. Still to confirm which system or table holds the billing application’s data, and that Workday is in migration scope.',
+    context: 'Fresh Report purchases come from the Workday general ledger; at item level, Category-Item Summary uses Warehouse & DSD Purchases: warehouse bills from the internal billing application and DSD receipts from Retalix HQ (Fresh Report Deep Dive, 4 Nov). Still to confirm which system or table holds the billing application’s data, and that Workday is in migration scope. Refresh and period alignment moved to #49.',
   },
   {
     id: '6',
-    question: 'Receiving data flows: how DC and C&S receipts reach the HQ Receiver table.',
+    title: 'Receiving Data Flows',
+    status: 'Partly answered',
+    question: 'How DC and C&S receipts reach the HQ Receiver table.',
     context: 'Purchases from outside vendors are a known gap in the Fresh Report Total Purchases.',
   },
   {
     id: '9',
+    title: 'Exceptions Review Scope',
+    status: 'Partly answered',
     question: 'Is the exceptions review (Known Loss Report) part of this use case or a separate one?',
     context: 'Tentatively included; the Known Loss Report is shown as Scope TBD.',
   },
   {
     id: '10',
+    title: 'Ingredient and Recipe Costs',
+    status: 'Partly answered',
     question: 'How ingredient and recipe costs are maintained, and whether the dashboard only reads recipes or also edits them.',
-    context: 'Partly answered: recipes exist in Upshop (Inva Fresh), but the team would need to upload all recipes, and the tech team would connect the API to the dashboard (timing TBD).',
+    context: 'Recipes exist in Upshop (Inva Fresh), but the team would need to upload all recipes, and the tech team would connect the API to the dashboard (timing TBD).',
   },
   {
     id: '12',
+    title: 'PO Cost at Source',
+    status: 'Partly answered',
     question: 'How PO cost is recorded at the source (per case or per unit) and converted for random-weight items.',
     context: 'Needed for the Historical and Real-time PO Cost.',
   },
   {
     id: '16',
+    title: 'Total Loss Source',
+    status: 'Answered',
     question: 'Source of truth for loss: KL1011 or the Ops 300 report.',
-    context: 'Answered: KL1011 known loss, not Ops 300. Every loss figure in the prototype is labelled Known Loss.',
+    context: 'KL1011 is the source of known loss; the Ops 300 report counts a wider loss and is not used. Every loss figure in the prototype is labelled Known Loss.',
   },
   {
     id: '17',
+    title: 'Gross Margin Denominator',
+    status: 'Partly answered',
     question: 'Gross Sales basis and source for the Fresh Report, and the Gross Margin denominator.',
     context: 'Affects Total Gross Sales and Gross Margin Rate.',
   },
   {
+    id: '21',
+    title: 'Trade Rates in Fresh',
+    status: 'Partly answered',
+    question: 'Do trade rates apply to fresh items, and where are they stored?',
+    context: 'HQ average cost carries deals and trade rates.',
+  },
+  {
     id: '26',
+    title: '$1,000 Rule SQL',
+    status: 'Open',
     question: 'Where the SQL with the $1,000 rule lives, and which report or job applies it.',
     context: 'Unknown today.',
   },
   {
     id: '32',
+    title: 'Cost Measure for Volatile Items',
+    status: 'Partly answered',
     question: 'Which cost measure is most helpful for items whose cost changes often, such as produce.',
     context: 'Average cost vs PO cost granularity is a pending business decision.',
   },
   {
     id: '36',
-    question: 'Recipe cost write-back: can an ingredient cost change flow to every PLU that uses it in HQ?',
+    title: 'Recipe Cost Write-back',
+    status: 'Open',
+    question: 'Can an ingredient cost change flow to every PLU that uses it in HQ?',
     context: 'Write-back to HQ is manual and out of scope for the prototype.',
   },
   {
     id: '44',
+    title: 'Upshop Viability',
+    status: 'Partly answered',
     question: 'Is Upshop (Inva Fresh) a viable source for recipes, and how can its data be extracted?',
-    context: 'Partly answered: Upshop is the production planning and recipe management system, and it has an API. Whether ingredients go in the MVP is to confirm with the business.',
+    context: 'Upshop is the production planning and recipe management system, and it has an API. Whether ingredients go in the MVP is to confirm with the business.',
   },
   {
     id: '45',
+    title: 'Upshop API Data',
+    status: 'Open',
     question: 'What the Upshop API holds (recipes, ingredients, quantities, units, item codes that link to HQ, costs), and whether it is reliable and up to date.',
-    context: 'Open; depends on #44.',
+    context: 'Depends on #44.',
   },
   {
     id: '46',
+    title: 'Recipe Scope and Inventory',
+    status: 'Partly answered',
     question: 'Which recipes the Ingredients View should cover, which are already in Upshop and which live outside it.',
-    context: 'Partly answered: Deli keeps one Excel workbook per category; pizza is not a production item and may not have a recipe in Upshop yet.',
+    context: 'Deli keeps one Excel workbook per category; pizza is not a production item and may not have a recipe in Upshop yet.',
   },
   {
     id: '47',
+    title: 'Recipe Gaps, Quality and Modeling',
+    status: 'Open',
     question: 'How missing recipes are added to Upshop, which quality checks the recipe data needs, and how the API data is modeled for the dashboard.',
-    context: 'Open; depends on #44 to #46.',
+    context: 'Depends on #44 to #46.',
+  },
+  {
+    id: '48',
+    title: 'UC2 Business Owners',
+    status: 'Open',
+    question: 'Who is the business owner for each UC2 KPI?',
+    context: 'Every KPI row still lists the owners carried over from UC1.',
+  },
+  {
+    id: '49',
+    title: 'Purchases Refresh and Period Alignment',
+    status: 'Open',
+    question: 'What refresh does each purchases KPI need, and what is the shortest period the dashboard should show for each?',
+    context: 'Total Purchases closes weekly after the Thursday postings. Warehouse & DSD Purchases refresh daily, but a DSD receipt can cover a week of product.',
+  },
+  {
+    id: '50',
+    title: 'Known Loss Valuation Basis',
+    status: 'Open',
+    question: 'Should Known Loss ($) and the $1,000 High Loss Flag be valued at cost or at retail? Does the $1,000 apply per item and store, or per item across all stores?',
+    context: 'The Recon Map points to KL1011 "Known Loss Retail $". The prototype assumes cost and applies the rule per item, store and week, marked Pending validation.',
+  },
+  {
+    id: '51',
+    title: 'Department Scope',
+    status: 'Open',
+    question: 'Which departments does UC2 cover: the five fresh departments in the Fresh Report, or every department the EASS1048 prints?',
+    context: 'The prototype covers the five fresh departments: Produce, Deli, Bakery, Seafood and Floral. Meat is out of scope.',
   },
 ];

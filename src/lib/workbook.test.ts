@@ -855,3 +855,53 @@ describe('prototype review feedback', () => {
     expect(weekTick(globalWeek(2026, 1))).toBe('12/28/25');
   });
 });
+
+describe('Open questions follow the workbook (10 Nov 2026)', () => {
+  it('lists #48 to #51 as Open, with their titles, and #5 and #16 as Answered', async () => {
+    const { OPEN_QUESTIONS } = await import('./definitions');
+    const q = (id: string) => OPEN_QUESTIONS.find((x) => x.id === id)!;
+    expect(q('48').title).toBe('UC2 Business Owners');
+    expect(q('49').title).toBe('Purchases Refresh and Period Alignment');
+    expect(q('50').title).toBe('Known Loss Valuation Basis');
+    expect(q('51').title).toBe('Department Scope');
+    for (const id of ['48', '49', '50', '51']) expect(q(id).status).toBe('Open');
+    expect(q('5').status).toBe('Answered');
+    expect(q('5').context).toMatch(/Workday general ledger/);
+    expect(q('5').context).toMatch(/Warehouse & DSD Purchases/);
+    expect(q('16').status).toBe('Answered');
+    expect(q('16').context).toMatch(/KL1011 is the source of known loss/);
+  });
+  it('every question has a title and a known status, ids are unique and in workbook order', async () => {
+    const { OPEN_QUESTIONS } = await import('./definitions');
+    const ok = new Set(['Open', 'Partly answered', 'Answered', 'Superseded']);
+    for (const x of OPEN_QUESTIONS) {
+      expect(x.title.trim().length).toBeGreaterThan(0);
+      expect(ok.has(x.status)).toBe(true);
+      expect(x.question.trim().length).toBeGreaterThan(0);
+    }
+    const ids = OPEN_QUESTIONS.map((x) => Number(x.id));
+    expect(new Set(ids).size).toBe(ids.length);
+    expect([...ids].sort((a, b) => a - b)).toEqual(ids);
+  });
+  it('every (#N) cited in the definitions and the views has an entry in the list', async () => {
+    const { KPI_DEFINITIONS, OPEN_QUESTIONS } = await import('./definitions');
+    const ids = new Set(OPEN_QUESTIONS.map((x) => x.id));
+    const views = import.meta.glob<string>('../views/*.tsx', { query: '?raw', import: 'default', eager: true });
+    expect(Object.keys(views).length).toBeGreaterThan(3);
+    const text = JSON.stringify({ KPI_DEFINITIONS, OPEN_QUESTIONS }) + Object.values(views).join('\n');
+    const cited = new Set<string>();
+    // "(#5)", "(#5, #49)", "(#44 to #47)", "#50" in running text.
+    for (const m of text.matchAll(/#(\d{1,2})\b(?![0-9a-f]{2})/g)) cited.add(m[1]);
+    expect(cited.size).toBeGreaterThan(10);
+    for (const id of cited) expect(ids.has(id), `#${id}`).toBe(true);
+  });
+  it('the loss basis and the $1,000 flag cite #50, and "not yet in the tracker" is gone', async () => {
+    const { KPI_DEFINITIONS } = await import('./definitions');
+    const { FLAG_BASIS_NOTE, HIGH_LOSS_FLAG_TIP } = await import('./kpis');
+    expect(KPI_DEFINITIONS.find((k) => k.id === 'high-loss-flag')!.definition).toMatch(/\(#50\)/);
+    expect(KPI_DEFINITIONS.find((k) => k.id === 'total-loss')!.definition).toMatch(/\(#50\)/);
+    expect(FLAG_BASIS_NOTE).toMatch(/\(#50\)/);
+    expect(HIGH_LOSS_FLAG_TIP).toMatch(/\(#50\)/);
+    expect(JSON.stringify(KPI_DEFINITIONS) + FLAG_BASIS_NOTE).not.toMatch(/not yet in the tracker/);
+  });
+});

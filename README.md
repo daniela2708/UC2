@@ -48,7 +48,7 @@ The tab bar holds the five views the workbook requires, in the order agreed afte
 
 **Known Loss Report scope (TBD).** The team agreed that shrink may become a separate use case. The Known Loss Report may move to a separate use case or a later wave; the MVP focuses on item cost; whether ingredient costing is in the MVP is to confirm with the business (#44). The High Loss Flag remains a required KPI in Category-Item Summary.
 
-**Meat is out of scope.** The Meat department is not part of UC2, so the dashboard covers five fresh departments: Produce, Deli, Bakery, Seafood and Floral. The legacy Fresh Report and EASS1048 include Meat (02-MEAT), so department totals compare one to one but company totals will not tie to those reports. That difference is expected. Deli and Seafood items with meat in the name (for example 16 in. Meat Lovers Pizza, Meatloaf Dinner, Lump Crab Meat) and recipe ingredients such as sausage and deli meats stay.
+**Meat is out of scope.** The Meat department is not part of UC2, so the dashboard covers five fresh departments: Produce, Deli, Bakery, Seafood and Floral. The department list is to confirm with the business (#51), and the meat questions (#41 to #43) are Superseded. The legacy Fresh Report and EASS1048 include Meat (02-MEAT), so department totals compare one to one but company totals will not tie to those reports. That difference is expected. Deli and Seafood items with meat in the name (for example 16 in. Meat Lovers Pizza, Meatloaf Dinner, Lump Crab Meat) and recipe ingredients such as sausage and deli meats stay.
 
 ### How each user story is satisfied
 
@@ -56,7 +56,7 @@ The tab bar holds the five views the workbook requires, in the order agreed afte
 |---|---|---|---|---|---|---|
 | 1 | Category manager / director evaluates item performance with accurate costs tied to recipes | Gross Sales, Net Sales, PO Costs, Average PO Cost (HQ Average Cost), Warehouse & DSD Purchases, Net Customer Sales per Unit, Gross Margin ($ / %), Known Loss | To Date, Rolling, Department, Category, Subcategory, SKU Number | Category-Item Summary | Item-Day | Daily sales |
 | 2 | Real-time item cost for random-weight / PLU items, based on POs | PO Cost, PO Cost / Unit, Gross Sales, Gross Margin ($ / %) | To Date, Rolling, Department, Category, Subcategory, SKU Number | Item Cost Over Time; Category-Item Summary | Item-Day | Daily costs and sales |
-| 3 | Simple store-level gross profit from sales and purchases, accounting for loss | Gross Sales, Purchases (Workday general ledger), Gross Profit ($ / %) | To Date, Rolling, Department, Category | Fresh Report | Category-Week | Weekly, on Thursdays after accounting postings |
+| 3 | Simple store-level gross profit from sales and purchases, accounting for loss | Gross Sales, Purchases (Workday general ledger), Gross Profit ($ / %) | To Date, Rolling, Department, Category | Fresh Report | Category-Week | Weekly, on Thursdays after accounting postings (#49) |
 | 4 | Review shrink impact on a category, spot fat-fingering errors and report them to IT for removal (Add to IT Review List) | Volume Sold, Sales ($), Known Loss (Units), Known Loss ($), High Loss Flag | Department, Category, Item, time | Known Loss Report (Add to IT Review List, Export list for IT); Category-Item Summary | Item-Store-Week | Daily loss |
 | 5 | Store or district manager sees where loss comes from, by store, region and district, with high loss flagged | Known Loss (Units / $), High Loss Flag | Region, District, Store Num, Department, Category, SKU Number | Known Loss Report (store table); Category-Item Summary | Item-Store-Week | Daily loss |
 | 6 | Real-time cost of ingredient-based products; a change to a base ingredient flows to every recipe that uses it | Ingredient contribution, Cost / unit, Gross Profit ($ / %), HQ Average Cost and Real-time PO Cost | Department, Category, PLU Number, time | Ingredients View ("Where used") | Item-Week | Daily PO cost |
@@ -64,7 +64,7 @@ The tab bar holds the five views the workbook requires, in the order agreed afte
 ### Filters
 
 Every filter in the workbook is available:
-- **Time:** Date Range, Time Spans to Date (Current Day, WTD, PTD, QTD, YTD), Rolling (6, 13, 26, 52 weeks), Year, Quarter, Period, Week Beginning, Day, and Holiday Periods aligned with last year's same holiday. Dates are always mm/dd/yyyy. The Fresh Report is weekly, so it has no Current Day or Day option; an old link with a day falls back to Period-to-Date or to the week that holds the day.
+- **Time:** Date Range, Time Spans to Date (Current Day, WTD, PTD, QTD, YTD), Rolling (6, 13, 26, 52 weeks), Year, Quarter, Period, Week Beginning, Day, and Holiday Periods aligned with last year's same holiday. Dates are always mm/dd/yyyy. The Fresh Report is weekly (#49), so it has no Current Day or Day option; an old link with a day falls back to Period-to-Date or to the week that holds the day.
 - **Business:** Department, Category, Subcategory, SKU Number, Region, District, Store Number and ID Stores, plus a proposed Cost type filter.
 
 A view greys out the filters it does not use, with a tooltip:
@@ -120,31 +120,36 @@ Every formula lives in `src/lib/kpis.ts` (pure, typed, null-guarded) and uses th
   - Gross Profit (%) = Gross Profit ÷ Gross Sales (Pending validation).
 - **High Loss Flag** = known loss higher than **$1,000** for an item in a store in a week. Exactly $1,000.00 is not flagged.
   - $1,000 per week per item is the workbook default (#2); where the current rule's SQL lives is unknown (#26).
-  - Threshold basis: at cost, assumed, Pending validation (not yet in the tracker).
+  - Threshold basis and grain: at cost, per item and store, assumed, Pending validation (#50).
   - "Likely entry error" and "High loss to review" are proposed secondary labels.
-- **Loss valuation:** every loss column says "at cost" or "at retail". Cost vs retail is Pending validation; the Recon Map points to KL1011 "Known Loss Retail $".
+- **Loss valuation:** every loss column says "at cost" or "at retail". Cost vs retail is Pending validation (#50); the Recon Map points to KL1011 "Known Loss Retail $".
 - **Sign convention:** a cost increase is a margin loss. "Annual cost change +$X" reads with "Margin impact −$X", both red; the reverse is green. This applies in Where used and the simulator.
 
-The **KPI definitions** modal lists each KPI with its business definition, calculation, legacy source, reconciliation target, the views that use it, workbook priority and status (Draft, Proposed, Pending validation). It ends with the open questions the prototype cites, numbered as in the workbook's Open Questions sheet:
-- **#1** Real-time PO Cost: access to PO cost in Biceps and its link to Retalix HQ.
-- **#2** High loss threshold ($1,000 per week per item).
-- **#3** Cost for PLU-based and random-weight items.
-- **#5** Purchases build: the Fresh Report uses the Workday general ledger; Category-Item Summary uses Warehouse & DSD Purchases (billing application and Retalix HQ DSD receipts).
-- **#6** Receiving data flows (DC and C&S).
-- **#9** Exceptions review scope.
-- **#10** Ingredient and recipe costs: recipes exist in Upshop (Inva Fresh); they need uploading and the API connecting to the dashboard.
-- **#12** PO cost at source.
-- **#16** Loss source: answered, KL1011 known loss (not Ops 300). The workbook's Total Loss is labelled **Known Loss** everywhere.
-- **#17** Gross Sales basis and source for the Fresh Report.
-- **#26** Where the SQL for the $1,000 rule lives.
-- **#32** Cost measure for volatile items.
-- **#36** Recipe cost write-back.
-- **#44** Upshop viability as the recipe source, and whether ingredients go in the MVP.
-- **#45** What the Upshop API holds, and how reliable it is.
-- **#46** Which recipes are in scope, and which are not in Upshop yet (for example pizza).
-- **#47** How missing recipes are added, data quality checks and modeling for the dashboard.
+The **KPI definitions** modal lists each KPI with its business definition, calculation, legacy source, reconciliation target, the views that use it, workbook priority and status (Draft, Proposed, Pending validation). It ends with the open questions the prototype cites, numbered as in the workbook's Open Questions sheet (10 Nov 2026), each with its title and status:
+- **#1** Real-time PO Cost (Partly answered): access to PO cost in Biceps and its link to Retalix HQ.
+- **#2** High Loss (Answered): $1,000 per week per item.
+- **#3** PLU and Random-Weight Cost (Partly answered).
+- **#5** Fresh Purchases Build (Answered): Fresh Report purchases from the Workday general ledger; at item level, Warehouse & DSD Purchases.
+- **#6** Receiving Data Flows (Partly answered): DC and C&S.
+- **#9** Exceptions Review Scope (Partly answered).
+- **#10** Ingredient and Recipe Costs (Partly answered): recipes exist in Upshop (Inva Fresh); they need uploading and the API connecting to the dashboard.
+- **#12** PO Cost at Source (Partly answered).
+- **#16** Total Loss Source (Answered): KL1011 is the source of known loss (not Ops 300). The workbook's Total Loss is labelled **Known Loss** everywhere.
+- **#17** Gross Margin Denominator (Partly answered): also the Gross Sales basis and source for the Fresh Report.
+- **#21** Trade Rates in Fresh (Partly answered).
+- **#26** $1,000 Rule SQL (Open): where the SQL for the rule lives.
+- **#32** Cost Measure for Volatile Items (Partly answered).
+- **#36** Recipe Cost Write-back (Open).
+- **#44** Upshop Viability (Partly answered): Upshop as the recipe source, and whether ingredients go in the MVP.
+- **#45** Upshop API Data (Open): what the Upshop API holds, and how reliable it is.
+- **#46** Recipe Scope and Inventory (Partly answered): which recipes are in scope, and which are not in Upshop yet (for example pizza).
+- **#47** Recipe Gaps, Quality and Modeling (Open): how missing recipes are added, data quality checks and modeling for the dashboard.
+- **#48** UC2 Business Owners (Open): who owns each UC2 KPI.
+- **#49** Purchases Refresh and Period Alignment (Open): weekly Total Purchases after the Thursday postings; daily Warehouse & DSD Purchases, while a DSD receipt can cover a week of product.
+- **#50** Known Loss Valuation Basis (Open): cost or retail, and whether the $1,000 rule applies per item and store or per item across stores.
+- **#51** Department Scope (Open): the five fresh departments or every EASS1048 department.
 
-The loss threshold basis (cost or retail) is Pending validation and not yet in the tracker.
+The loss valuation basis (cost or retail) and the grain of the $1,000 rule are Pending validation (#50).
 
 ## How the data is generated
 

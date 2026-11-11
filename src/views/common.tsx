@@ -36,7 +36,7 @@ export function lossBasisWord(basis: LossBasis): string {
 
 /** Tooltip for a loss $ column or tile under the current valuation. */
 export function lossTitle(basis: LossBasis, what = 'Known loss (KL1011)'): string {
-  return `${what}, valued ${lossBasisWord(basis)} (toggle: At cost | At retail). The workbook Recon Map maps Known Loss ($) to KL1011 "Known Loss Retail $"; cost vs retail is pending validation with the business.`;
+  return `${what}, valued ${lossBasisWord(basis)} (toggle: At cost | At retail). The workbook Recon Map maps Known Loss ($) to KL1011 "Known Loss Retail $"; cost vs retail is pending validation with the business (#50).`;
 }
 
 export function ViewToggles({
