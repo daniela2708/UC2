@@ -113,3 +113,58 @@ describe('empty selections', () => {
     expect(itemAggregates(noItems, ['trade'])).toEqual([]);
   });
 });
+
+describe('ID stores (UC1 rule: five complete fiscal quarters)', async () => {
+  const { completeQuartersBefore, ID_MIN_QUARTERS, isIdStore, QUARTER_WEEKS, STORE_BY_ID, STORES } = await import('../data/stores');
+  const OPEN = Number.MAX_SAFE_INTEGER;
+  it('a fiscal quarter is 13 weeks and the rule needs five', () => {
+    expect(QUARTER_WEEKS).toBe(13);
+    expect(ID_MIN_QUARTERS).toBe(5);
+  });
+  it('a store with exactly five complete quarters is in; with four it is out', () => {
+    const open = globalWeek(2025, 1); // first week of FY2025 Q1
+    const store = { openWeek: open, closeWeek: OPEN };
+    const fifthDone = open + 5 * QUARTER_WEEKS; // FY2026 Q2 starts after five complete quarters
+    expect(completeQuartersBefore(open, fifthDone)).toBe(5);
+    expect(isIdStore(store, fifthDone, fifthDone + 3)).toBe(true);
+    expect(completeQuartersBefore(open, fifthDone - 1)).toBe(4);
+    expect(isIdStore(store, fifthDone - 1, fifthDone + 3)).toBe(false);
+  });
+  it('the partial quarter a store opens in does not count', () => {
+    const open = globalWeek(2025, 2); // one week into Q1
+    const store = { openWeek: open, closeWeek: OPEN };
+    expect(isIdStore(store, globalWeek(2026, 14), globalWeek(2026, 14))).toBe(false);
+    expect(isIdStore(store, globalWeek(2026, 27), globalWeek(2026, 27))).toBe(true);
+  });
+  it('closed stores are not comparable; invalid ranges fail safe', () => {
+    expect(isIdStore({ openWeek: 0, closeWeek: globalWeek(2026, 20) }, globalWeek(2026, 1), globalWeek(2026, 42))).toBe(false);
+    expect(isIdStore({ openWeek: 0, closeWeek: globalWeek(2026, 20) }, globalWeek(2026, 1), globalWeek(2026, 19))).toBe(true);
+    expect(isIdStore({ openWeek: 0, closeWeek: OPEN }, Number.NaN, 10)).toBe(false);
+    expect(isIdStore({ openWeek: 0, closeWeek: OPEN }, 20, 10)).toBe(false);
+    expect(completeQuartersBefore(Number.NaN, 100)).toBe(0);
+    expect(completeQuartersBefore(100, 50)).toBe(0);
+  });
+  it('store 291 (opened FY2025 W10) becomes an ID store in FY2026 W27, not before', () => {
+    const st = STORE_BY_ID.get(291)!;
+    const pick = { ...DEFAULT_STATE, stores: [291], idStores: true };
+    expect(storeIndices(pick, { startWeek: globalWeek(2026, 26), endWeek: globalWeek(2026, 26) })).toEqual([]);
+    expect(storeIndices(pick, { startWeek: globalWeek(2026, 27), endWeek: globalWeek(2026, 27) })).toEqual([st.idx]);
+  });
+  it('YTD FY2026 leaves out the six FY2025 openings and the two closed stores', () => {
+    const ytd = resolveTime(BASE_TIME);
+    expect(storeIndices({ ...DEFAULT_STATE, idStores: true }, ytd)).toHaveLength(STORES.length - 8);
+    expect(storeIndices({ ...DEFAULT_STATE, idStores: false }, ytd)).toHaveLength(STORES.length);
+  });
+  it('a range with no eligible stores returns empty, and the aggregates add up to zero without error', () => {
+    const w42 = resolveTime(W42_TIME);
+    const s = { ...DEFAULT_STATE, stores: [294], idStores: true }; // opened FY2025 W30: not eligible before FY2027
+    expect(storeIndices(s, w42)).toEqual([]);
+    const scope = buildScope(s, w42);
+    expect(scope.stores).toEqual([]);
+    const aggs = itemAggregates(scope, DEFAULT_STATE.costBasis, 'po');
+    for (const a of aggs) {
+      expect(a.gross).toBe(0);
+      expect(a.purch).toBe(0);
+    }
+  });
+});

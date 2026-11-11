@@ -1,4 +1,4 @@
-import { globalWeek } from './calendar';
+import { globalWeek, PERIOD_WEEKS, WEEKS_PER_YEAR } from './calendar';
 import { hash01 } from './prng';
 
 /** Real Weis region and district structure (200 stores). */
@@ -23,7 +23,7 @@ const STRUCTURE: Record<number, Record<string, number[]>> = {
   },
 };
 
-/** Opened during FY2025 (first open week, fiscal week number). Not ID stores for FY2025/26 comparisons. */
+/** Opened during FY2025 (first open week, fiscal week number). ID stores once they have five complete fiscal quarters. */
 const OPENED_FY2025: Record<number, number> = { 291: 10, 293: 22, 294: 30, 295: 38, 307: 17, 308: 45 };
 /** Closed during FY2026 (first closed fiscal week). */
 const CLOSED_FY2026: Record<number, number> = { 19: 20, 60: 33 };
@@ -93,9 +93,33 @@ export function isOpen(s: Store, week: number): boolean {
   return week >= s.openWeek && week < s.closeWeek;
 }
 
-/** Comparable ("ID") store: trades every week of the range and of the same weeks last year. */
-export function isIdStore(s: Store, startWeek: number, endWeek: number): boolean {
-  const lyStart = startWeek - 52;
-  const from = lyStart >= 0 ? lyStart : startWeek;
-  return s.openWeek <= from && s.closeWeek > endWeek;
+/** Weeks in a fiscal quarter (three periods, 4-4-5). Every quarter has 13 weeks, so quarters start at multiples of 13. */
+export const QUARTER_WEEKS = PERIOD_WEEKS[0] + PERIOD_WEEKS[1] + PERIOD_WEEKS[2];
+/** Complete fiscal quarters a store needs before it counts as an ID store (UC1 rule). */
+export const ID_MIN_QUARTERS = 5;
+
+/**
+ * Complete fiscal quarters a store has traded before `week`: quarters that start on or after the opening week
+ * and end before `week`. The quarter the store opens in counts only when it opens on the quarter's first week.
+ */
+export function completeQuartersBefore(openWeek: number, week: number): number {
+  if (!Number.isFinite(openWeek) || !Number.isFinite(week)) return 0;
+  return Math.max(0, Math.floor(week / QUARTER_WEEKS) - Math.ceil(openWeek / QUARTER_WEEKS));
 }
+
+/**
+ * Comparable ("ID") store, UC1 rule: eligible after five complete fiscal quarters, counted at the start of the
+ * range, so the store also traded through the whole same range last year. One store population serves this year
+ * and last year. A store that closes before the end of the range is not comparable.
+ * Stores with openWeek 0 traded before the simulated history (FY2024) and count as long established.
+ * Relocated or expanded stores stay eligible under the UC1 rule; the simulated store master has no relocation or
+ * expansion history, so that case is not modeled here and stays pending until the store master provides it.
+ */
+export function isIdStore(s: Pick<Store, 'openWeek' | 'closeWeek'>, startWeek: number, endWeek: number): boolean {
+  if (!Number.isFinite(startWeek) || !Number.isFinite(endWeek) || endWeek < startWeek) return false;
+  if (s.closeWeek <= endWeek) return false;
+  if (s.openWeek <= 0) return true;
+  return completeQuartersBefore(s.openWeek, startWeek) >= ID_MIN_QUARTERS;
+}
+
+if (QUARTER_WEEKS * 4 !== WEEKS_PER_YEAR) throw new Error('Fiscal quarters must split the year into four equal parts');

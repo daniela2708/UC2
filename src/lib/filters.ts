@@ -388,8 +388,8 @@ export function districtsOf(region: number) {
 
 /**
  * Store indexes in scope: the union of the chosen districts and the individually chosen stores
- * (everything in the region when neither is chosen). ID stores keeps stores open across the
- * whole range and last year's range.
+ * (everything in the region when neither is chosen). ID stores keeps comparable stores only (UC1 rule: five
+ * complete fiscal quarters before the range starts; see isIdStore).
  */
 export function storeIndices(
   s: Pick<FilterState, 'region' | 'districts' | 'stores' | 'idStores'>,

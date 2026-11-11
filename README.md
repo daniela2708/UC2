@@ -66,6 +66,7 @@ The tab bar holds the five views the workbook requires, in the order agreed afte
 Every filter in the workbook is available:
 - **Time:** Date Range, Time Spans to Date (Current Day, WTD, PTD, QTD, YTD), Rolling (6, 13, 26, 52 weeks), Year, Quarter, Period, Week Beginning, Day, and Holiday Periods aligned with last year's same holiday. Dates are always mm/dd/yyyy. The Fresh Report is weekly (#49), so it has no Current Day or Day option; an old link with a day falls back to Period-to-Date or to the week that holds the day.
 - **Business:** Department, Category, Subcategory, SKU Number, Region, District, Store Number and ID Stores, plus a proposed Cost type filter.
+- **ID Stores** uses the UC1 rule (Pending validation; confirm it applies to UC2 unchanged): a store is eligible after five complete fiscal quarters, counted at the start of the range, and the same store population applies to this year and last year. Stores that close before the end of the range are left out. Relocated or expanded stores stay eligible under the rule, but the simulated store master has no relocation history, so that case is not modeled.
 
 A view greys out the filters it does not use, with a tooltip:
 - Fresh Report has no SKU filter.
